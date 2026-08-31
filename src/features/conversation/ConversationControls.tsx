@@ -184,6 +184,7 @@ export function ConversationStatusSheet({
 
 export function ConversationActionMenu({
   open,
+  readOnly = false,
   thread,
   pendingAction,
   onClose,
@@ -194,6 +195,7 @@ export function ConversationActionMenu({
   onArchive,
 }: {
   open: boolean;
+  readOnly?: boolean;
   thread: DisplayRecord;
   pendingAction: string;
   onClose: () => void;
@@ -211,24 +213,28 @@ export function ConversationActionMenu({
       label: pinned ? t("取消置顶") : t("置顶"),
       icon: "pin" as const,
       onClick: onPin,
+      requiresWrite: true,
     },
     {
       id: "refresh",
       label: t("刷新会话"),
       icon: "refresh" as const,
       onClick: onRefresh,
+      requiresWrite: false,
     },
     {
       id: "copy",
       label: t("复制会话 ID"),
       icon: "copy" as const,
       onClick: onCopy,
+      requiresWrite: false,
     },
     {
       id: "rename",
       label: t("重命名"),
       icon: "rename" as const,
       onClick: onRename,
+      requiresWrite: true,
     },
     {
       id: "archive",
@@ -236,6 +242,7 @@ export function ConversationActionMenu({
       icon: "archive" as const,
       onClick: onArchive,
       danger: true,
+      requiresWrite: true,
     },
   ];
   return (
@@ -253,7 +260,7 @@ export function ConversationActionMenu({
             <button
               type="button"
               className={action.danger ? "danger" : ""}
-              disabled={!!pendingAction}
+              disabled={!!pendingAction || (readOnly && action.requiresWrite)}
               aria-busy={pendingAction === action.id}
               key={action.id}
               onClick={action.onClick}

@@ -28,6 +28,7 @@ import {
   prependUniqueTurns,
   resumeThreadSession,
   type OlderTurnsLoadState,
+  type ThreadAccessMode,
 } from "./app-server/thread-session";
 import {
   activeTurnId,
@@ -92,6 +93,7 @@ import {
 import { BackendConnectionManager } from "./backends/connection-manager";
 import {
   bindConnectionRecovery,
+  bindReadOnlyThreadRefresh,
   reconnectAndWaitUntilReady,
   recoverBackendConnection,
 } from "./backends/connection-recovery";
@@ -220,6 +222,9 @@ function BackendWorkspace({
     useState<PermissionMode | null>(null);
   const [activeSettingsSynchronized, setActiveSettingsSynchronized] =
     useState(true);
+  const [activeThreadAccessMode, setActiveThreadAccessMode] =
+    useState<ThreadAccessMode>("interactive");
+  const [activeThreadResumeError, setActiveThreadResumeError] = useState("");
   const [openingThreadId, setOpeningThreadId] = useState("");
   const [conversationLoadState, setConversationLoadState] =
     useState<ConversationLoadState>("idle");
@@ -372,7 +377,10 @@ function BackendWorkspace({
     }
   }
 
-  async function reconcileActiveThread(client: AppServerClient) {
+  async function reconcileActiveThread(
+    client: AppServerClient,
+    isCurrent: () => boolean = () => true,
+  ) {
     const threadId = String(
       activeThreadTargetRef.current ?? activeRef.current?.id ?? "",
     );
@@ -390,7 +398,8 @@ function BackendWorkspace({
         activeThreadTargetRef.current ?? activeRef.current?.id ?? "",
       ) !== threadId ||
       activeRef.current?.id !== threadId ||
-      latestTurns == null
+      latestTurns == null ||
+      !isCurrent()
     ) {
       return;
     }
@@ -422,6 +431,26 @@ function BackendWorkspace({
       ),
     );
   }
+
+  useEffect(() => {
+    if (
+      activeThreadAccessMode !== "readOnly" ||
+      !active?.id ||
+      !conversationVisible ||
+      conversationLoadState !== "ready"
+    ) return;
+    return bindReadOnlyThreadRefresh({
+      refresh: async (isCurrent) => {
+        const client = clientRef.current;
+        if (client) await reconcileActiveThread(client, isCurrent);
+      },
+    });
+  }, [
+    active?.id,
+    activeThreadAccessMode,
+    conversationLoadState,
+    conversationVisible,
+  ]);
 
   useEffect(() => {
     const hasRunningThread = threads.some((thread) =>
@@ -841,6 +870,8 @@ function BackendWorkspace({
                 setConversationLoadState("ready");
                 setConversationLoadError("");
                 setActiveSettingsSynchronized(resumed.settingsSynchronized);
+                setActiveThreadAccessMode(resumed.accessMode);
+                setActiveThreadResumeError(resumed.resumeError ?? "");
                 setSelectedModel(resumed.model ?? "");
                 setSelectedEffort(resumedSettings.effort);
                 setSelectedServiceTier(resumedSettings.serviceTier);
@@ -998,6 +1029,8 @@ function BackendWorkspace({
       });
       resetOlderTurns(session.nextTurnsCursor);
       setActiveSettingsSynchronized(session.settingsSynchronized);
+      setActiveThreadAccessMode(session.accessMode);
+      setActiveThreadResumeError(session.resumeError ?? "");
       setSelectedModel(session.model ?? "");
       setSelectedEffort(resumedSettings.effort);
       setSelectedServiceTier(resumedSettings.serviceTier);
@@ -1076,6 +1109,8 @@ function BackendWorkspace({
     setSteering(false);
     setConversationLoadError("");
     setConversationLoadState("loading");
+    setActiveThreadAccessMode("interactive");
+    setActiveThreadResumeError("");
     resetOlderTurns();
     activeThreadTargetRef.current = thread.id;
     setActive({
@@ -1099,6 +1134,7 @@ function BackendWorkspace({
 
   async function send(event: FormEvent) {
     event.preventDefault();
+    if (active?.id && activeThreadAccessMode !== "interactive") return;
     const text = draft.trim();
     const pendingImages = draftImages;
     const pendingFiles = draftFiles;
@@ -1344,7 +1380,10 @@ function BackendWorkspace({
   }
 
   async function selectImages(files: FileList | null) {
-    if (!files?.length) return;
+    if (
+      !files?.length ||
+      (active?.id && activeThreadAccessMode !== "interactive")
+    ) return;
     const generation = imageReadGenerationRef.current.begin();
     const existingBytes = draftImages.reduce(
       (total, image) => total + image.size,
@@ -1379,6 +1418,7 @@ function BackendWorkspace({
   }
 
   async function interrupt() {
+    if (activeThreadAccessMode !== "interactive") return;
     const turn = active?.turns?.at(-1);
     if (!turn) return;
     await clientRef.current?.request("turn/interrupt", { threadId: active!.id, turnId: turn.id });
@@ -1395,7 +1435,12 @@ function BackendWorkspace({
   async function togglePinned() {
     const client = clientRef.current;
     const thread = activeRef.current;
-    if (!client || !thread?.id || pendingAction) return false;
+    if (
+      !client ||
+      !thread?.id ||
+      pendingAction ||
+      activeThreadAccessMode !== "interactive"
+    ) return false;
     const nextPinned = thread.isPinned !== true;
     setPendingAction("pin");
     setError("");
@@ -1431,7 +1476,12 @@ function BackendWorkspace({
   async function renameThread() {
     const client = clientRef.current;
     const thread = activeRef.current;
-    if (!client || !thread?.id || pendingAction) return false;
+    if (
+      !client ||
+      !thread?.id ||
+      pendingAction ||
+      activeThreadAccessMode !== "interactive"
+    ) return false;
     const name = window.prompt(t("输入新的会话名称"), titleOf(thread))?.trim();
     if (!name || name === titleOf(thread)) return false;
     setPendingAction("rename");
@@ -1464,7 +1514,12 @@ function BackendWorkspace({
   async function archiveThread() {
     const client = clientRef.current;
     const thread = activeRef.current;
-    if (!client || !thread?.id || pendingAction) return false;
+    if (
+      !client ||
+      !thread?.id ||
+      pendingAction ||
+      activeThreadAccessMode !== "interactive"
+    ) return false;
     setPendingAction("archive");
     setError("");
     try {
@@ -1618,6 +1673,8 @@ function BackendWorkspace({
     setConversationLoadError("");
     resetOlderTurns();
     setActiveSettingsSynchronized(true);
+    setActiveThreadAccessMode("interactive");
+    setActiveThreadResumeError("");
     if (defaultPermissionMode) {
       setNewChatPermissionMode(defaultPermissionMode);
       setSelectedPermission(defaultPermissionMode.permissions);
@@ -1732,6 +1789,8 @@ function BackendWorkspace({
               ? pendingSteerMessage.text
               : ""
           }
+          accessMode={activeThreadAccessMode}
+          resumeError={activeThreadResumeError}
           tokenUsage={tokenUsageByThread[active.id] ?? null}
           rateLimits={rateLimits}
           pendingAction={pendingAction}

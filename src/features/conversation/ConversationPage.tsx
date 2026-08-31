@@ -126,6 +126,8 @@ export function ConversationPage({
   steering,
   steerable,
   pendingSteerText,
+  accessMode,
+  resumeError,
   tokenUsage,
   rateLimits,
   pendingAction,
@@ -170,6 +172,8 @@ export function ConversationPage({
   steering: boolean;
   steerable: boolean;
   pendingSteerText: string;
+  accessMode: "interactive" | "readOnly";
+  resumeError: string;
   tokenUsage: Record<string, any> | null;
   rateLimits: Record<string, any> | null;
   pendingAction: string;
@@ -224,7 +228,9 @@ export function ConversationPage({
     ready: loadState === "ready",
   });
   const interactive =
-    loadState === "ready" && (!isNewChat || !!active.cwd);
+    loadState === "ready" &&
+    accessMode === "interactive" &&
+    (!isNewChat || !!active.cwd);
   const requestOlderTurns = () => {
     if (!["idle", "error"].includes(olderTurnsState)) return;
     beginPrependPreservation();
@@ -289,6 +295,7 @@ export function ConversationPage({
       </header>
       <ConversationActionMenu
         open={actionsOpen}
+        readOnly={accessMode === "readOnly"}
         thread={active}
         pendingAction={pendingAction}
         onClose={() => setActionsOpen(false)}
@@ -437,6 +444,18 @@ export function ConversationPage({
         aria-busy={imageReading}
         onSubmit={onSubmit}
       >
+        {accessMode === "readOnly" && (
+          <div
+            className="readonly-thread-banner"
+            role="status"
+            title={resumeError}
+          >
+            <span>{t("该会话正在其他 Codex 客户端运行，当前为只读模式")}</span>
+            <button type="button" onClick={onRetry}>
+              {t("重新连接")}
+            </button>
+          </div>
+        )}
         {realtimeActive && (
           <RealtimeControls
             status={

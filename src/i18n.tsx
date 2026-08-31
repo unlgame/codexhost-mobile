@@ -225,6 +225,9 @@ const english: Record<string, string> = {
   "最高": "Maximum",
   "超高": "Ultra",
   "只读": "Read only",
+  "该会话正在其他 Codex 客户端运行，当前为只读模式":
+    "This conversation is running in another Codex client. Read-only mode is active.",
+  "重新连接": "Reconnect",
   "工作区访问": "Workspace access",
   "完全访问": "Full access",
   "默认权限": "Default permissions",

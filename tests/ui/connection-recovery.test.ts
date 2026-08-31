@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bindReadOnlyThreadRefresh,
   bindConnectionRecovery,
   reconnectAndWaitUntilReady,
   recoverBackendConnection,
@@ -10,6 +11,72 @@ class FakeDocument extends EventTarget {
 }
 
 describe("App 前后台连接恢复", () => {
+  it("只读会话仅在前台定时刷新且回到前台立即刷新", () => {
+    vi.useFakeTimers();
+    const documentTarget = new FakeDocument();
+    const refresh = vi.fn();
+    const unbind = bindReadOnlyThreadRefresh({
+      documentTarget,
+      refresh,
+      intervalMs: 3_000,
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(3_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    documentTarget.visibilityState = "hidden";
+    documentTarget.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(6_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    documentTarget.visibilityState = "visible";
+    documentTarget.dispatchEvent(new Event("visibilitychange"));
+    expect(refresh).toHaveBeenCalledTimes(3);
+
+    unbind();
+    vi.advanceTimersByTime(3_000);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it("只读刷新未完成时不会启动重叠请求且解绑后不再刷新", async () => {
+    vi.useFakeTimers();
+    const documentTarget = new FakeDocument();
+    const pending: {
+      complete?: () => void;
+      isCurrent?: () => boolean;
+    } = {};
+    const refresh = vi.fn(
+      (isCurrent: () => boolean) =>
+        new Promise<void>((resolve) => {
+          pending.isCurrent = isCurrent;
+          pending.complete = resolve;
+        }),
+    );
+    const unbind = bindReadOnlyThreadRefresh({
+      documentTarget,
+      refresh,
+      intervalMs: 3_000,
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(9_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    pending.complete?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.advanceTimersByTime(3_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    unbind();
+    expect(pending.isCurrent?.()).toBe(false);
+    vi.advanceTimersByTime(6_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("进入后台再回到前台时主动重连一次", () => {
     const documentTarget = new FakeDocument();
     const windowTarget = new EventTarget();

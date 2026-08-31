@@ -12,6 +12,8 @@ interface Requester {
 
 export interface ResumedThreadSession {
   thread: AnyRecord;
+  accessMode: ThreadAccessMode;
+  resumeError?: string;
   model?: string;
   reasoningEffort?: string | null;
   serviceTier?: string | null;
@@ -21,6 +23,8 @@ export interface ResumedThreadSession {
   settingsSynchronized: boolean;
   nextTurnsCursor: string | null;
 }
+
+export type ThreadAccessMode = "interactive" | "readOnly";
 
 export interface ThreadTurnsPage {
   turns: AnyRecord[];
@@ -35,6 +39,14 @@ export type OlderTurnsLoadState =
 
 function chronologicalTurns(data: AnyRecord[] | undefined) {
   return [...(data ?? [])].reverse();
+}
+
+function errorMessage(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function isActiveWriterConflict(reason: unknown) {
+  return errorMessage(reason).includes("already has an active writer");
 }
 
 export function prependUniqueTurns(
@@ -147,18 +159,32 @@ export async function resumeThreadSession(
       approvalPolicy: response.approvalPolicy,
       approvalsReviewer: response.approvalsReviewer,
       activePermissionProfile: response.activePermissionProfile,
+      accessMode: "interactive",
       settingsSynchronized: true,
       nextTurnsCursor: initialTurnsPage?.nextCursor ?? null,
     };
-  } catch {
+  } catch (reason) {
+    if (!isActiveWriterConflict(reason)) throw reason;
+    const resumeError = errorMessage(reason);
     const response = await client.request("thread/read", {
       threadId,
-      includeTurns: true,
+      includeTurns: false,
+    });
+    const turnsPage = await client.request("thread/turns/list", {
+      threadId,
+      limit: initialTurnsLimit,
+      sortDirection: "desc",
+      itemsView: "full",
     });
     return {
-      thread: response.thread,
+      thread: {
+        ...response.thread,
+        turns: chronologicalTurns(turnsPage.data),
+      },
+      accessMode: "readOnly",
+      resumeError,
       settingsSynchronized: false,
-      nextTurnsCursor: null,
+      nextTurnsCursor: turnsPage.nextCursor ?? null,
     };
   }
 }

@@ -44,6 +44,8 @@ describe("恢复已有 app-server 会话", () => {
       "turn-2",
     ]);
     expect(result.nextTurnsCursor).toBe("older-cursor");
+    expect(result.accessMode).toBe("interactive");
+    expect(result.resumeError).toBeUndefined();
     expect(result.settingsSynchronized).toBe(true);
     expect(result.model).toBe("gpt-5.6-sol");
     expect(result.reasoningEffort).toBe("high");
@@ -53,21 +55,57 @@ describe("恢复已有 app-server 会话", () => {
     expect(result.activePermissionProfile?.id).toBe(":workspace");
   });
 
-  it("resume 不可用时回退 thread/read，且标记设置未同步", async () => {
+  it("resume 被其他写入者占用时使用只读分页接口恢复", async () => {
     const request = vi
       .fn()
-      .mockRejectedValueOnce(new Error("thread is owned by another app-server"))
-      .mockResolvedValueOnce({ thread: { id: "thread-1", turns: [] } });
+      .mockRejectedValueOnce(
+        new Error("thread-store conflict: thread already has an active writer"),
+      )
+      .mockResolvedValueOnce({
+        thread: { id: "thread-1", title: "Paginated thread" },
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: "turn-2" }, { id: "turn-1" }],
+        nextCursor: "older-cursor",
+      });
 
     const result = await resumeThreadSession({ request }, "thread-1");
 
     expect(request).toHaveBeenNthCalledWith(2, "thread/read", {
       threadId: "thread-1",
-      includeTurns: true,
+      includeTurns: false,
+    });
+    expect(request).toHaveBeenNthCalledWith(3, "thread/turns/list", {
+      threadId: "thread-1",
+      limit: 10,
+      sortDirection: "desc",
+      itemsView: "full",
     });
     expect(result.settingsSynchronized).toBe(false);
     expect(result.thread.id).toBe("thread-1");
-    expect(result.nextTurnsCursor).toBeNull();
+    expect(result.thread.turns.map((turn: { id: string }) => turn.id)).toEqual([
+      "turn-1",
+      "turn-2",
+    ]);
+    expect(result.nextTurnsCursor).toBe("older-cursor");
+    expect(result.accessMode).toBe("readOnly");
+    expect(result.resumeError).toContain("active writer");
+    expect(request).not.toHaveBeenCalledWith("thread/read", {
+      threadId: "thread-1",
+      includeTurns: true,
+    });
+  });
+
+  it("resume 的非 writer 错误保留原始原因且不读取历史", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("app-server connection closed"));
+
+    await expect(
+      resumeThreadSession({ request }, "thread-1"),
+    ).rejects.toThrow("app-server connection closed");
+
+    expect(request).toHaveBeenCalledOnce();
   });
 
   it("使用游标获取更早 turns 并转换为时间正序", async () => {

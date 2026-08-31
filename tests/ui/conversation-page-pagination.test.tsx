@@ -13,6 +13,8 @@ function renderConversation(
     steering?: boolean;
     steerable?: boolean;
     pendingSteerText?: string;
+    accessMode?: "interactive" | "readOnly";
+    resumeError?: string;
     draftImages?: DraftImage[];
     draftFiles?: DraftFile[];
     onSubmit?: (event: FormEvent) => void;
@@ -46,6 +48,8 @@ function renderConversation(
       steering={composer.steering ?? false}
       steerable={composer.steerable ?? true}
       pendingSteerText={composer.pendingSteerText ?? ""}
+      accessMode={composer.accessMode ?? "interactive"}
+      resumeError={composer.resumeError ?? ""}
       tokenUsage={null}
       rateLimits={null}
       pendingAction=""
@@ -138,6 +142,37 @@ describe("会话详情历史分页", () => {
 
     expect(view.getByText("加载失败，点击重试")).not.toBeNull();
     expect(view.getByText("分页会话")).not.toBeNull();
+  });
+
+  it("其他客户端占用会话时展示只读状态并禁止写入", () => {
+    const onRetry = vi.fn();
+    const { container } = renderConversation(
+      "idle",
+      undefined,
+      {
+        draft: "不能发送",
+        accessMode: "readOnly",
+        resumeError: "thread already has an active writer",
+      },
+      onRetry,
+    );
+    const view = within(container);
+
+    expect(
+      view.getByText("该会话正在其他 Codex 客户端运行，当前为只读模式"),
+    ).not.toBeNull();
+    expect(view.getByLabelText("向 Codex 提问").hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(view.getByRole("button", { name: "添加附件" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(view.getByRole("button", { name: "发送" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "重新连接" }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it("任务执行中输入内容后，停止按钮直接变成引导发送按钮", () => {

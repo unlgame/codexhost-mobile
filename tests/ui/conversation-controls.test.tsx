@@ -98,4 +98,28 @@ describe("对话详情控制", () => {
     view = within(container);
     expect(view.getByRole("button", { name: "取消置顶" })).not.toBeNull();
   });
+
+  it("只读会话保留查看操作并禁用会话写操作", () => {
+    const { container } = render(
+      <ConversationActionMenu
+        open
+        readOnly
+        thread={{ id: "thread-1", preview: "会话", isPinned: false }}
+        pendingAction=""
+        onClose={() => undefined}
+        onPin={() => undefined}
+        onRefresh={() => undefined}
+        onCopy={() => undefined}
+        onRename={() => undefined}
+        onArchive={() => undefined}
+      />,
+    );
+    const view = within(container);
+
+    expect(view.getByRole("button", { name: "刷新会话" }).hasAttribute("disabled")).toBe(false);
+    expect(view.getByRole("button", { name: "复制会话 ID" }).hasAttribute("disabled")).toBe(false);
+    expect(view.getByRole("button", { name: "置顶" }).hasAttribute("disabled")).toBe(true);
+    expect(view.getByRole("button", { name: "重命名" }).hasAttribute("disabled")).toBe(true);
+    expect(view.getByRole("button", { name: "归档" }).hasAttribute("disabled")).toBe(true);
+  });
 });

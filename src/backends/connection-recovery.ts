@@ -10,6 +10,55 @@ interface ConnectionRecoveryOptions {
   reconnect: () => void | Promise<void>;
 }
 
+interface ReadOnlyThreadRefreshOptions {
+  documentTarget?: VisibilityTarget;
+  refresh: (isCurrent: () => boolean) => void | Promise<void>;
+  intervalMs?: number;
+}
+
+export function bindReadOnlyThreadRefresh({
+  documentTarget = document,
+  refresh,
+  intervalMs = 3_000,
+}: ReadOnlyThreadRefreshOptions) {
+  let disposed = false;
+  let refreshInFlight = false;
+  const requestRefresh = () => {
+    if (
+      disposed ||
+      refreshInFlight ||
+      documentTarget.visibilityState !== "visible"
+    ) return;
+    refreshInFlight = true;
+    const result = refresh(
+      () => !disposed && documentTarget.visibilityState === "visible",
+    );
+    if (result && typeof result.then === "function") {
+      void result
+        .catch(() => undefined)
+        .finally(() => {
+          refreshInFlight = false;
+        });
+    } else {
+      refreshInFlight = false;
+    }
+  };
+  const onVisibilityChange = () => requestRefresh();
+  const timer = globalThis.setInterval(requestRefresh, intervalMs);
+
+  documentTarget.addEventListener("visibilitychange", onVisibilityChange);
+  requestRefresh();
+
+  return () => {
+    disposed = true;
+    globalThis.clearInterval(timer);
+    documentTarget.removeEventListener(
+      "visibilitychange",
+      onVisibilityChange,
+    );
+  };
+}
+
 export async function reconnectAndWaitUntilReady(
   reconnect: () => void,
   isReady: () => boolean,
