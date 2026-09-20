@@ -1,225 +1,152 @@
-# Codex Mobile 自动安装指南
+# codexhost-mobile 安装与首次配置
 
-本文档写给负责安装 Codex Mobile 的 Agent。目标是在一台 macOS 电脑上完成
-Codex Mobile 与 Codex CLI 的安装、升级、登录检查、局域网网关配置和开机启动，
-最后向用户提供可在手机上直接打开的带 Token 局域网链接。
+本文面向安装 `codexhost-mobile` APK 的终端用户，说明如何下载、校验、安装，
+以及首次启动时如何手填 Windows 网关地址。
 
-## 执行要求
+> 本客户端**不使用二维码配对**。所有连接信息都由你手动填写，避免把网关地址和
+> 访问口令暴露给摄像头、截图或日志。
 
-- 必须实际执行安装、配置和验证，不要只把命令转述给用户。
-- 当前流程仅适用于 macOS；如果系统不是 macOS，停止执行并说明原因。
-- Node.js 必须为 20 或更高版本。缺少 Node.js 或 npm 时，先向用户说明并使用其现有
-  Node.js 版本管理方式安装；不要直接执行来源不明的 `curl | sh`。
-- 不使用 `sudo npm install -g`。遇到全局目录权限问题时，优先沿用用户已有的
-  nvm、fnm、Volta 或 Homebrew Node.js 环境。
-- 不覆盖用户现有的 Codex 配置、登录凭据或 `~/.codex` 内容。
-- 不在 Git 仓库、命令日志或普通配置文件中记录访问 Token。
-- 重复执行安装时，保留已有的有效 Token，不要无故更换，避免已配置的手机失效。
-- 最终可以向当前用户显示一次完整访问链接，但要提醒该链接包含访问口令，不要公开
-  分享。
+---
 
-## 一、检查基础环境
+## 一、开始之前
 
-依次检查：
+需要先准备好三件事：
 
-```bash
-uname -s
-node --version
-npm --version
-```
+1. **Windows 主机上正在运行 codex-host**（`AppServerHost` 已就绪，命名管道可连接）。
+   如果 codex-host 没在运行，网关无法转发请求，App 会显示主机不可用。
+2. **同一台 Windows 主机上已启动网关**，并且监听地址允许手机接入。
+3. **手机与 Windows 主机在同一网络**，防火墙已放行网关监听端口。
 
-确认系统输出为 `Darwin`，Node.js 主版本不低于 20。记录当前 Node.js、npm、
-`codex` 和 `codex-mobile` 的实际路径，后续 LaunchAgent 必须使用与当前终端一致的
-Node.js 环境：
+如果你还没有启动网关，请先按 [`README.md`](README.md) 的「运行模式」一节启动
+`CODEX_APP_SERVER_MODE=codexhost` 模式，并确认能拿到网关的访问口令。
 
-```bash
-command -v node
-command -v npm
-command -v codex || true
-command -v codex-mobile || true
-```
+---
 
-## 二、通过 npm 全局安装 Codex Mobile
+## 二、下载 APK
 
-先查询 npm 上的最新版，再安装或升级：
-
-```bash
-npm view codex-mobile version
-npm install -g codex-mobile@latest
-codex-mobile --version
-```
-
-安装后必须确认：
-
-- `command -v codex-mobile` 返回真实可执行路径；
-- `codex-mobile --version` 与 `npm view codex-mobile version` 一致；
-- `codex-mobile --help` 可以正常运行。
-
-如果版本不一致，执行 `hash -r` 后重新检查。仍不一致时排查 PATH 中是否存在另一个
-旧版 `codex-mobile`，不得在版本未确认前继续配置服务。
-
-## 三、安装或升级 Codex CLI
-
-Codex CLI 的 npm 包名是 `@openai/codex`。先读取已安装版本和 npm 最新版本：
-
-```bash
-codex --version 2>/dev/null || true
-npm view @openai/codex version
-```
-
-未安装或版本落后时执行：
-
-```bash
-npm install -g @openai/codex@latest
-hash -r
-codex --version
-```
-
-必须比较 `codex --version` 中的版本号与 `npm view @openai/codex version`；只有完全
-一致才视为升级完成。同时确认 `command -v codex` 指向刚刚升级后的 CLI，而不是 PATH
-中更靠前的旧版本。
-
-检查登录状态：
-
-```bash
-codex login status
-```
-
-如果尚未登录，运行 `codex login` 并提示用户在浏览器中完成官方登录。登录属于用户
-交互步骤，Agent 不得索取、读取或转发用户密码、验证码、API Key 或登录 Token。
-完成后再次执行 `codex login status`，确认退出码为 0。
-
-## 四、配置局域网网关
-
-使用以下固定位置保存私有运行配置：
+打开仓库的 Releases 页面：
 
 ```text
-~/.codex-mobile/gateway.env
+https://github.com/unlgame/codexhost-mobile/releases/latest
 ```
 
-创建目录并将权限限制为当前用户：
-
-```bash
-umask 077
-mkdir -p "$HOME/.codex-mobile/logs"
-chmod 700 "$HOME/.codex-mobile" "$HOME/.codex-mobile/logs"
-```
-
-配置文件必须包含：
-
-```bash
-export HOST='0.0.0.0'
-export PORT='18766'
-export CODEX_MOBILE_TOKEN='<64 位十六进制随机口令>'
-export CODEX_APP_SERVER_MODE='managed'
-export PATH='<Node.js、npm 全局 bin、Codex CLI 所在目录以及系统目录>'
-export CODEX_MOBILE_BIN='<command -v codex-mobile 的绝对路径>'
-```
-
-具体规则：
-
-1. 如果 `gateway.env` 已存在且其中有非空 `CODEX_MOBILE_TOKEN`，保留原 Token。
-2. 只有首次安装或原 Token 无效时，才使用 `openssl rand -hex 32` 生成新 Token。
-3. `PATH` 至少包含 `dirname "$(command -v node)"`、
-   `dirname "$(command -v codex)"`、npm 全局 bin 目录和
-   `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`。
-4. 写入后执行 `chmod 600 "$HOME/.codex-mobile/gateway.env"`。
-5. 不要把 Token 直接写入 LaunchAgent plist。
-
-## 五、配置 LaunchAgent 开机启动
-
-创建：
+下载这两个文件：
 
 ```text
-~/Library/LaunchAgents/ai.loock.codex-mobile.plist
+CodexHostMobile-v<version>.apk
+CodexHostMobile-v<version>.apk.sha256
 ```
 
-plist 使用以下配置：
+`<version>` 是具体版本号，例如 `0.2.1`。
 
-- `Label`：`ai.loock.codex-mobile`
-- `ProgramArguments`：
-  - `/bin/zsh`
-  - `-lc`
-  - `source "$HOME/.codex-mobile/gateway.env" && exec "$CODEX_MOBILE_BIN" start`
-- `RunAtLoad`：`true`
-- `KeepAlive`：`true`
-- `ProcessType`：`Background`
-- `StandardOutPath`：`~/.codex-mobile/logs/gateway.log` 对应的绝对路径
-- `StandardErrorPath`：`~/.codex-mobile/logs/gateway.error.log` 对应的绝对路径
-- `ThrottleInterval`：`10`
+---
 
-Agent 应使用可靠的 plist 写入方式生成文件，并把 `$HOME` 替换为当前用户的真实绝对
-路径。写入后运行 `plutil -lint`，确认格式正确。
+## 三、校验完整性
 
-重新加载服务：
+安装前先确认 APK 没有被篡改或下载不完整。
+
+在电脑上（或手机的 Termux 里）执行：
 
 ```bash
-launchctl bootout "gui/$(id -u)/ai.loock.codex-mobile" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/ai.loock.codex-mobile.plist"
-launchctl kickstart -k "gui/$(id -u)/ai.loock.codex-mobile"
+sha256sum --check CodexHostMobile-v<version>.apk.sha256
 ```
 
-不要用长期前台进程代替 LaunchAgent，也不要在安装结束时停止该服务。
+输出 `OK` 才继续。如果显示 `FAILED`，说明文件损坏，请重新下载。
 
-## 六、验证服务
+---
 
-依次验证以下结果：
+## 四、安装 APK
 
-1. `launchctl print "gui/$(id -u)/ai.loock.codex-mobile"` 能看到服务且没有持续退出；
-2. `18766` 正在监听局域网地址；
-3. `~/.codex-mobile/logs/gateway.error.log` 没有 Codex CLI、登录或端口占用错误；
-4. `codex-mobile auth --plain` 能返回完整局域网 URL；
-5. 使用该 URL 的 Token 请求 `/api/host` 返回 HTTP 200，并且
-   `appServerReady` 为 `true`；
-6. 同一局域网内的其他设备可以访问该电脑的 IP 和 `18766` 端口。
+1. 把 APK 传到手机（数据线、局域网传输或云盘均可）。
+2. 点击 APK 文件。Android 会提示「未知来源」。
+3. 按系统引导，为当前使用的文件管理器或浏览器**授予「安装未知应用」权限**。
+4. 返回并再次点击 APK，确认安装。
 
-获取最终链接：
+> `codexhost-mobile` 不支持静默安装，必须由你手动确认。
 
-```bash
-codex-mobile auth --plain
-```
+如果系统拦截安装，请检查：
 
-预期格式：
+- 是否已授予「安装未知应用」权限；
+- 手机剩余存储空间是否充足；
+- APK 是否下载完整（回到第三步重新校验）；
+- 是否已安装同包名但签名不同的旧版应用——需要先卸载旧版再安装。
+
+---
+
+## 五、首次配置：手填网关地址
+
+首次打开 App 会进入「设备设置」。这里**手动填写**网关地址，不要扫码。
+
+地址格式：
 
 ```text
-http://<电脑局域网IP>:18766/?token=<随机口令>
+http://<Windows-主机地址>:<网关端口>/?token=<访问口令>
 ```
 
-如果无法从手机访问，按顺序检查：
+| 部分 | 说明 |
+| --- | --- |
+| `<Windows-主机地址>` | Windows 主机在当前网络中的地址，由你启动网关时可见 |
+| `<网关端口>` | 网关实际监听的端口，同样由启动配置决定 |
+| `<访问口令>` | 启动网关时设置的访问口令 |
 
-- 手机与电脑是否位于同一局域网；
-- macOS 防火墙是否允许 Node.js 接收入站连接；
-- 当前网络是否启用了客户端隔离；
-- VPN 或代理是否阻止了局域网地址；
-- `HOST` 是否确实为 `0.0.0.0`；
-- 日志中是否存在端口占用、Codex 未登录或 app-server 启动失败。
+填写要点：
 
-不要为了排障关闭系统防火墙；只为当前 Node.js/Codex Mobile 服务添加必要权限。
+- 地址必须**完整**，包含协议头、端口和 `token` 查询参数，缺一段都无法连接。
+- 地址和访问口令只保存在手机本地存储中，不会提交到仓库，也不会上传到任何服务器。
+- 如果之前已经填过，可以点「测试连接」确认当前网络下是否仍然可达。
 
-## 七、向用户交付
+保存后 App 会：
 
-安装完成后，Agent 必须用简洁中文报告：
+1. 请求 `/api/host`，读取网关自述信息；
+2. 完成一次握手验证；
+3. 验证通过后保存该设备，并在会话列表中加载该主机的项目与会话。
 
-```text
-Codex Mobile 已安装并设置为开机启动。
+---
 
-手机访问地址：
-http://<电脑局域网IP>:18766/?token=<随机口令>
+## 六、添加更多 Windows 主机
 
-请在与电脑相同局域网的手机浏览器中打开该链接。
-Android 用户也可以从下面的页面下载最新版 App：
-https://github.com/loock-ai/codex-mobile/releases/latest
+一个客户端可以保存多台 Windows 主机的连接。重复第五步，为每台主机分别填写地址即可。
 
-链接中包含访问口令，请勿公开分享。
-```
+启用多台主机时会同时维持所有已启用设备的连接，会话列表按时间汇总展示。
 
-同时报告以下非敏感验证信息：
+---
 
-- Codex Mobile 版本；
-- Codex CLI 版本与登录状态；
-- LaunchAgent 状态；
-- 网关监听端口；
-- `/api/host` 与 `appServerReady` 验证结果。
+## 七、应用内更新
 
-除最终访问链接外，不重复输出 Token，不展示 `gateway.env` 全文，也不把 Token 写入
-长期日志、Issue、提交信息或聊天摘要。
+App 启动后会检查正式 Release。发现新版本时会提示你确认，下载并校验成功后调起系统
+安装器。
+
+更新只接受来自本仓库 Release 的资源，其它来源会被拒绝。
+
+升级属于同包名、同签名的覆盖安装，**原有的网关地址与访问口令不会丢失**。
+
+---
+
+## 八、常见问题
+
+| 现象 | 排查方向 |
+| --- | --- |
+| 保存地址后一直显示「主机不可用」 | codex-host 是否在运行；网关是否已启动；手机与主机是否同网段 |
+| 握手验证失败 | 访问口令是否填错；地址是否少了 `token` 参数 |
+| 能连上但看不到会话 | codex-host 是否已完成登录；该主机上是否存在 Codex 项目目录 |
+| 切换网络后全部掉线 | 网关监听地址是否为 `0.0.0.0`；防火墙是否放行；VPN 是否拦截局域网地址 |
+| 提示「无法安装」 | 是否授予「安装未知应用」；是否残留签名不同的旧版 |
+| 提示「校验失败」 | APK 下载不完整，重新下载并跑 `sha256sum --check` |
+
+> 排障时不要关闭系统防火墙，只为网关服务放行必要端口。
+
+---
+
+## 九、卸载
+
+直接通过 Android 系统设置卸载即可。卸载会清除本地保存的网关地址与访问口令，
+不会影响 Windows 主机上的 codex-host 或任何会话数据。
+
+---
+
+## 相关文档
+
+- [`README.md`](README.md) —— 项目概览、架构与运行模式
+- [`docs/RELEASE.md`](docs/RELEASE.md) —— 出包与签名流程
+- [`docs/SECRETS.md`](docs/SECRETS.md) —— 签名 Secret 说明
+- [`docs/FORK.md`](docs/FORK.md) —— fork 后自行构建 APK

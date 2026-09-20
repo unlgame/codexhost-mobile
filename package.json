@@ -1,11 +1,11 @@
 {
-  "name": "codex-mobile",
+  "name": "codexhost-mobile",
   "version": "0.2.0",
-  "description": "Mobile-first web client and gateway for Codex app-server",
+  "description": "Android client that turns a phone into an external harness terminal for a Windows codex-host",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "codex-mobile": "bin/codex-mobile.mjs"
+    "codexhost-mobile": "bin/codex-mobile.mjs"
   },
   "files": [
     "bin",
@@ -19,17 +19,20 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/loock-ai/codex-mobile.git"
+    "url": "git+https://github.com/unlgame/codexhost-mobile.git"
   },
-  "homepage": "https://github.com/loock-ai/codex-mobile#readme",
+  "homepage": "https://github.com/unlgame/codexhost-mobile#readme",
   "bugs": {
-    "url": "https://github.com/loock-ai/codex-mobile/issues"
+    "url": "https://github.com/unlgame/codexhost-mobile/issues"
   },
   "keywords": [
+    "codexhost-mobile",
     "codex",
-    "mobile",
-    "app-server",
-    "gateway"
+    "codex-host",
+    "android",
+    "apk",
+    "harness",
+    "terminal"
   ],
   "publishConfig": {
     "access": "public"

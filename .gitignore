@@ -5,3 +5,15 @@ test-results/
 playwright-report/
 .DS_Store
 *.tsbuildinfo
+
+# ---- Android 签名密钥与本地配置：永不入库 ----
+*.keystore
+*.jks
+*.pepk
+keystore.properties
+local.properties
+
+# ---- Android 构建产物 ----
+*.apk
+*.aab
+pakeplus/
