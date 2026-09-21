@@ -29,11 +29,28 @@ jobs:
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
+        # 别把 registry-url 加回来。
+        #
+        # setup-node 一看到它就会做两件事：往 $RUNNER_TEMP/.npmrc 写
+        #     //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+        # 并把 NODE_AUTH_TOKEN 默认为 ${{ github.token }}——就是 CI 日志里
+        # 脱敏成 XXXXX-XXXXX-XXXXX-XXXXX 的那个。
+        #
+        # 于是 npm 的推理链变成：registry 配了令牌 → 不用走可信发布 →
+        # 拿这个令牌去 PUT → 它当然不是 npm 凭据 → 404。
+        #
+        # registry 对未授权发布一律回 404，和「包不存在」是同一个码，
+        # 所以这个坑长得像 Trusted Publisher 没配对，排查时容易一路走错。
+        # 日志里那句「npm tokens that bypass 2FA are being restricted」
+        # 是铁证：npm 以为自己手里有令牌。
+        #
+        # 可信发布本来就不需要 registry-url。删掉之后 .npmrc 和
+        # NODE_AUTH_TOKEN 两个问题一起消失，npm 才会回退到 OIDC。
         with:
           node-version: "24"
-          registry-url: https://registry.npmjs.org
+          # 有意不设 registry-url：见上面的说明。
+          # 别加回 registry-url: https://registry.npmjs.org。
           package-manager-cache: false
-
       - name: Install locked dependencies
         run: npm ci
 
@@ -62,31 +79,6 @@ jobs:
 
       - name: Verify package contents
         run: npm pack --dry-run
-
-      - name: Drop registry token placeholder
-        # setup-node 的 registry-url 会往项目 .npmrc 写一行占位：
-        #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
-        # 这个 job 故意不设 NODE_AUTH_TOKEN（走可信发布，不留长期密钥），
-        # 于是 npm 读到的是个空令牌，却会认为「令牌已配置」，
-        # 于是根本不会去用 OIDC 换短时发布令牌，直接拿空令牌去 PUT。
-        # registry 对未授权的发布一律回 404，和「包不存在」同一个码，
-        # 所以这个症状一直看着像 Trusted Publisher 没配对，
-        # 其实是这一行占位符把 OIDC 流程堵死了。
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -f .npmrc ]]; then
-            echo "npmrc before:"
-            cat .npmrc
-            # grep -v 比 sed -i 好读，也不用跟 sed 的分隔符转义较劲。
-            # 全删空时 grep 会返回 1，管道结束时靠 || true 兜住。
-            grep -v '^//registry.npmjs.org/:_authToken=' .npmrc > .npmrc.tmp || true
-            mv .npmrc.tmp .npmrc
-            echo "npmrc after:"
-            cat .npmrc
-          else
-            echo "no project .npmrc"
-          fi
 
       - name: Publish matching npm package
         # 不设 NODE_AUTH_TOKEN 是有意的：这个 job 拿了 id-token: write，

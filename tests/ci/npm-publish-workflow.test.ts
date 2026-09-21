@@ -30,18 +30,20 @@ interface PublishWorkflow {
   };
 }
 
+const PUBLISH_WORKFLOW = ".github/workflows/publish-npm.yml";
+const BUILD_WORKFLOW = ".github/workflows/build-android.yml";
+
+function readWorkflow(path: string) {
+  return parse(readFileSync(path, "utf8")) as PublishWorkflow;
+}
+
 describe("npm 自动发布流水线", () => {
   it("统一发布流水线传入版本后验证、构建并发布同版本 npm 包", () => {
-    const source = readFileSync(
-      ".github/workflows/publish-npm.yml",
-      "utf8",
-    );
+    const source = readFileSync(PUBLISH_WORKFLOW, "utf8");
     const workflow = parse(source) as PublishWorkflow;
     const steps = workflow.jobs?.publish?.steps ?? [];
     const script = steps.map((step) => step.run ?? "").join("\n");
-    const publish = steps.find((step) =>
-      step.run?.includes("npm publish"),
-    );
+    const publish = steps.find((step) => step.run?.includes("npm publish"));
 
     expect(workflow.on?.workflow_call?.inputs?.app_version).toMatchObject({
       required: true,
@@ -52,15 +54,14 @@ describe("npm 自动发布流水线", () => {
       "id-token": "write",
     });
     expect(workflow.jobs?.publish?.["runs-on"]).toBe("ubuntu-latest");
-    expect(steps.some((step) => step.uses?.startsWith("actions/checkout@"))).toBe(
-      true,
-    );
+    expect(
+      steps.some((step) => step.uses?.startsWith("actions/checkout@")),
+    ).toBe(true);
     expect(
       steps.some(
         (step) =>
           step.uses?.startsWith("actions/setup-node@") &&
-          step.with?.["node-version"] === "24" &&
-          step.with?.["registry-url"] === "https://registry.npmjs.org",
+          step.with?.["node-version"] === "24",
       ),
     ).toBe(true);
     expect(script).toContain("npm ci");
@@ -83,9 +84,7 @@ describe("npm 自动发布流水线", () => {
     // 填成 build-android.yml 的话 npm 匹配不上，会静默退化成匿名发布，
     // 最后以 E404 PUT .../codexhost-mobile 收场——曾经就这么红过几次。
     // 所以改名这个文件之前，先去 npm 上把 Trusted Publisher 一起改掉。
-    const publishWorkflow = parse(
-      readFileSync(".github/workflows/publish-npm.yml", "utf8"),
-    ) as PublishWorkflow;
+    const publishWorkflow = readWorkflow(PUBLISH_WORKFLOW);
 
     expect(publishWorkflow.on?.workflow_call).toBeDefined();
     expect(publishWorkflow.permissions).toMatchObject({
@@ -96,7 +95,7 @@ describe("npm 自动发布流水线", () => {
     // 真正执行 npm publish 的步骤只能在这个文件里，
     // 不能挪到 build-android.yml：挪了 OIDC 声明就变了，npm 那边会失配。
     const buildAndroid = parse(
-      readFileSync(".github/workflows/build-android.yml", "utf8"),
+      readFileSync(BUILD_WORKFLOW, "utf8"),
     ) as {
       jobs?: Record<string, { steps?: Array<{ run?: string }> }>;
     };
@@ -113,35 +112,58 @@ describe("npm 自动发布流水线", () => {
     ).toBe(true);
   });
 
-  it("发布前会删掉 setup-node 写的空令牌占位，否则可信发布被堵死", () => {
-    // setup-node 传了 registry-url 之后会往项目 .npmrc 写：
-    //   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
-    // 本 job 故意不设 NODE_AUTH_TOKEN，npm 会读到空令牌、
-    // 却认为「已配置令牌」，于是跳过 OIDC 直接匿名 PUT，
-    // registry 对未授权发布一律回 404——和「包不存在」同一个码。
-    // 所以必须有个步骤在 npm publish 之前把这行删掉。
-    const source = readFileSync(
-      ".github/workflows/publish-npm.yml",
-      "utf8",
-    );
-    const steps = (parse(source) as PublishWorkflow).jobs?.publish?.steps ?? [];
-    const publishIndex = steps.findIndex((step) =>
-      /\bnpm\s+publish\b/.test(step.run ?? ""),
+  it("setup-node 不带 registry-url，否则可信发布被它写错令牌堵死", () => {
+    // setup-node 的 node-auth-token 默认值是 ${{ github.token }}。
+    // 一传 registry-url，它就会同时做两件事：
+    //   1. 往 $RUNNER_TEMP/.npmrc 写
+    //        //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+    //   2. 把 NODE_AUTH_TOKEN 默认成那个 github.token
+    //      （CI 日志里脱敏成 XXXXX-XXXXX-XXXXX-XXXXX 的那个）
+    //
+    // npm 的推理链于是变成：registry 配了令牌 → 不用走可信发布 →
+    // 拿它去 PUT → 它当然不是 npm 凭据 → 404。
+    //
+    // registry 对未授权发布一律回 404，和「包不存在」是同一个码，
+    // 所以这个坑长得像 Trusted Publisher 没配对，排查时容易一路走错方向。
+    // 日志里那句「npm tokens that bypass 2FA are being restricted」是铁证：
+    // npm 以为自己手里有令牌。
+    //
+    // 修法只有一条：不给 registry-url。可信发布本来就不需要它，
+    // 删掉之后 .npmrc 和 NODE_AUTH_TOKEN 两个问题一起消失。
+    // 反过来把 NODE_AUTH_TOKEN 接回来「修好」它是偷懒解法——
+    // 那等于往仓库里塞一个长期密钥。
+    const workflow = readWorkflow(PUBLISH_WORKFLOW);
+    const steps = workflow.jobs?.publish?.steps ?? [];
+    const setupNodes = steps.filter((step) =>
+      step.uses?.startsWith("actions/setup-node@"),
     );
 
-    const stripIndex = steps.findIndex((step) =>
-      /_authToken/.test(step.run ?? "") &&
-      /npmrc/.test(step.run ?? ""),
-    );
-
-    expect(stripIndex, "缺少删空令牌占位的步骤").toBeGreaterThan(-1);
+    expect(setupNodes, "应该只有一个 setup-node 步骤").toHaveLength(1);
+    expect(setupNodes[0]?.with?.["node-version"]).toBe("24");
     expect(
-      stripIndex,
-      "删空令牌占位必须出现在 npm publish 之前，否则 npm 已经带着空令牌发出去了",
-    ).toBeLessThan(publishIndex);
+      setupNodes[0]?.with?.["registry-url"],
+      "setup-node 不能带 registry-url：它会写 _authToken 占位并把 NODE_AUTH_TOKEN 默认成 github.token，可信发布的 OIDC 流程就被堵死了",
+    ).toBeUndefined();
+  });
 
-    // 而且不能用「把 NODE_AUTH_TOKEN 接回来」这种偷懒解法：
-    // 那等于往仓库里引入一个长期密钥，可信发布的意义就没了。
-    expect(steps[publishIndex].env?.NODE_AUTH_TOKEN).toBeUndefined();
+  it("别再往流水线里加「删 _authToken 占位」的补救步骤", () => {
+    // 曾经有人（就是我）在 npm publish 前加过一个步骤，想删掉 setup-node
+    // 写的令牌占位。它看着对症，其实什么都没做，因为它读的是
+    // 仓库根目录的 .npmrc，而 setup-node 写的是 $RUNNER_TEMP/.npmrc。
+    // 结果那一步直接短路：
+    //   cat .npmrc 2>/dev/null || echo "(none)"   →   "(none)"
+    // 真正的修法是不给 registry-url，不是事后擦屁股。
+    // 这个测试确保别有人再把这种空转步骤塞回来顶替本来的修法。
+    const workflow = readWorkflow(PUBLISH_WORKFLOW);
+    const steps = workflow.jobs?.publish?.steps ?? [];
+    const stripSteps = steps.filter(
+      (step) =>
+        /_authToken/.test(step.run ?? "") && /npmrc/i.test(step.run ?? ""),
+    );
+
+    expect(
+      stripSteps,
+      "setup-node 写的是 $RUNNER_TEMP/.npmrc，那种删仓库根目录 .npmrc 的步骤跑起来会直接短路，请去掉 registry-url",
+    ).toEqual([]);
   });
 });
