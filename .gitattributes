@@ -1,0 +1,4 @@
+# 仓库内容统一以 LF 入库（git ls-files --eol 全部为 i/lf）。
+# 这里显式锁死会被逐字节断言的测试 fixture：否则 Windows 上
+# core.autocrlf=true 会把它们检出成 CRLF，断言静默失配。
+tests/ci/fixtures/** text eol=lf

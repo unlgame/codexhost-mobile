@@ -1,13 +1,17 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Windows 上 concurrently 的入口是 .cmd，不能像 POSIX 那样直接 spawn 可执行文件。
-const concurrentlyBin = resolve(
-  "node_modules/.bin/",
-  process.platform === "win32" ? "concurrently.cmd" : "concurrently",
+// 与 bin/dev.mjs 一致：直接以 node 调用 concurrently 的 JS 入口，不走 shell。
+// 每条命令因此都是独立 argv 元素，Windows 的 cmd.exe 引号规则完全不参与。
+const require = createRequire(import.meta.url);
+const concurrentlyPackageJson = require.resolve("concurrently/package.json");
+const concurrentlyEntry = resolve(
+  dirname(concurrentlyPackageJson),
+  require(concurrentlyPackageJson).bin.concurrently,
 );
 const isWindows = process.platform === "win32";
 
@@ -21,17 +25,16 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-// Windows 上把 JS 源码塞进 cmd 命令行会被引号规则搅碎，
-// 因此落成临时 .mjs 文件，只把文件路径交给命令行。
+// 两个平台都把 JS 源码落成临时 .mjs 文件，只把文件路径交给命令行：
+// - Windows 上源码塞进 cmd 命令行会被引号规则搅碎（反斜杠、分号都被吃掉）；
+// - POSIX 上 `node -e` 会让 process.argv[1] 变成第一个用户参数而不是脚本路径，
+//   脚本里读 process.argv[2] 恒为 undefined，子进程会立刻抛错退出。
 async function nodeScript(source: string, args: string[] = []): Promise<string> {
-  const argv = args.map(shellQuote).join(" ");
-  if (!isWindows) {
-    return `${shellQuote(process.execPath)} -e ${shellQuote(source)}${argv ? ` ${argv}` : ""}`;
-  }
   const directory = await mkdtemp(join(tmpdir(), "codex-mobile-dev-script-"));
   const file = join(directory, "script.mjs");
   await writeFile(file, source, "utf8");
-  return `node ${shellQuote(file)}${argv ? ` ${argv}` : ""}`;
+  const argv = args.map(shellQuote).join(" ");
+  return `${shellQuote(process.execPath)} ${shellQuote(file)}${argv ? ` ${argv}` : ""}`;
 }
 
 function waitForExit(
@@ -97,23 +100,12 @@ function terminateTree(child: ReturnType<typeof spawn>): void {
   });
 }
 
-// Windows 上必须整条命令作为一个字符串走 shell：
-// 1) .cmd 不能直接 spawn（Node 会以 EINVAL 拒绝）；
-// 2) 若用参数数组，每条命令会被 concurrently 当成彼此独立的命令。
+// 每条命令作为独立 argv 元素传给 concurrently，由它自己走 shell 解析；
+// 测试因此与 bin/dev.mjs 的启动方式完全一致，也避开了 cmd.exe 的引号规则。
 function spawnConcurrent(commands: string[]) {
-  if (isWindows) {
-    const line = [
-      shellQuote(concurrentlyBin),
-      "--kill-others",
-      "--success",
-      "first",
-      ...commands.map((command) => `"${command}"`),
-    ].join(" ");
-    return spawn(line, { stdio: "ignore", shell: true });
-  }
   return spawn(
-    concurrentlyBin,
-    ["--kill-others", "--success", "first", ...commands],
+    process.execPath,
+    [concurrentlyEntry, "--kill-others", "--success", "first", ...commands],
     { stdio: "ignore" },
   );
 }

@@ -334,6 +334,14 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 不能再带 `tools`：该包已从 Android SDK 仓库移除，sdkmanager 会以
+          # “Failed to find package 'tools'” 退出码 1 结束整个步骤。
+          # 这里按 PakePlus Android 的 compileSdk/targetSdk 34 与 AGP 8.3.0 显式列出。
+          packages: >-
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
 
       - name: Install ImageMagick
         shell: bash

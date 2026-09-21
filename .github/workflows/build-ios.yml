@@ -301,7 +301,7 @@ jobs:
           from pathlib import Path
 
           path = Path("PakePlus/WebView.swift")
-          source = path.read_text()
+          source = path.read_text(encoding="utf-8")
           developer_extras = '''        // enable developer extras
                   if #available(iOS 16.4, *) {
                       webConfiguration.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -325,28 +325,28 @@ jobs:
           source = source.replace(
               bridge_registration,
               bridge_registration
-              + '\\n        webView.configuration.userContentController.add('
+              + '\n        webView.configuration.userContentController.add('
               'context.coordinator, name: "realtimeAudio")'
-              + '\\n        context.coordinator.realtimeWebView = webView',
+              + '\n        context.coordinator.realtimeWebView = webView',
               1,
           )
           coordinator_fields = (
-              "    private var locationManager: CLLocationManager?\\n"
+              "    private var locationManager: CLLocationManager?\n"
           )
           if source.count(coordinator_fields) != 1:
               raise SystemExit("Pinned PakePlus Coordinator fields changed")
           source = source.replace(
               coordinator_fields,
               coordinator_fields
-              + "    weak var realtimeWebView: WKWebView?\\n"
-              + "    private var realtimeAudioEngine: AVAudioEngine?\\n"
-              + "    private var realtimeAudioConverter: AVAudioConverter?\\n"
-              + "    private var realtimeAudioMuted = false\\n",
+              + "    weak var realtimeWebView: WKWebView?\n"
+              + "    private var realtimeAudioEngine: AVAudioEngine?\n"
+              + "    private var realtimeAudioConverter: AVAudioConverter?\n"
+              + "    private var realtimeAudioMuted = false\n",
               1,
           )
           message_handler = (
               "    func userContentController(_ userContentController: "
-              "WKUserContentController, didReceive message: WKScriptMessage) {\\n"
+              "WKUserContentController, didReceive message: WKScriptMessage) {\n"
               '        guard message.name == "blobDownload" else { return }'
           )
           if source.count(message_handler) != 1:
@@ -354,11 +354,11 @@ jobs:
           source = source.replace(
               message_handler,
               "    func userContentController(_ userContentController: "
-              "WKUserContentController, didReceive message: WKScriptMessage) {\\n"
-              '        if message.name == "realtimeAudio" {\\n'
-              "            handleRealtimeAudioMessage(message)\\n"
-              "            return\\n"
-              "        }\\n"
+              "WKUserContentController, didReceive message: WKScriptMessage) {\n"
+              '        if message.name == "realtimeAudio" {\n'
+              "            handleRealtimeAudioMessage(message)\n"
+              "            return\n"
+              "        }\n"
               '        guard message.name == "blobDownload" else { return }',
               1,
           )
@@ -549,13 +549,17 @@ jobs:
           if geolocation_prompt not in source:
               raise SystemExit("Pinned PakePlus geolocation hook changed")
           source = source.replace(geolocation_prompt, "")
-          path.write_text(source)
+          path.write_text(source, encoding="utf-8", newline="\n")
           Path("PakePlus/vConsole.js").unlink(missing_ok=True)
           index_path = Path("PakePlus/index.html")
-          index_source = index_path.read_text()
+          index_source = index_path.read_text(encoding="utf-8")
           if "./assets/" not in index_source:
               raise SystemExit("Generated Vite asset paths are missing")
-          index_path.write_text(index_source.replace("./assets/", "./"))
+          index_path.write_text(
+              index_source.replace("./assets/", "./"),
+              encoding="utf-8",
+              newline="\n",
+          )
           PY
           test -s PakePlus/index.html
           find PakePlus/assets -type f -name '*.js' -print -quit | grep -q .
