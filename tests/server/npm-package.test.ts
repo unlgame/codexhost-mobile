@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 const packageJson = JSON.parse(
   readFileSync(resolve("package.json"), "utf8"),
 );
-const cliPath = resolve("bin/codex-mobile.mjs");
+const cliPath = resolve("bin/codexhost-mobile.mjs");
 const cliSource = readFileSync(cliPath, "utf8");
 const serverSource = readFileSync(resolve("server/index.ts"), "utf8");
 const isolatedRuntimeDirectory = mkdtempSync(
@@ -37,10 +37,10 @@ function isolatedCliEnv(overrides: NodeJS.ProcessEnv = {}) {
 
 describe("npm 全局安装包", () => {
   it("声明公开 CLI、运行时文件和 Node 版本要求", () => {
-    expect(packageJson.name).toBe("codex-mobile");
+    expect(packageJson.name).toBe("codexhost-mobile");
     expect(packageJson.private).not.toBe(true);
     expect(packageJson.bin).toEqual({
-      "codex-mobile": "bin/codex-mobile.mjs",
+      "codexhost-mobile": "bin/codexhost-mobile.mjs",
     });
     expect(packageJson.files).toEqual(
       expect.arrayContaining([
@@ -75,7 +75,7 @@ describe("npm 全局安装包", () => {
       encoding: "utf8",
     });
 
-    expect(help).toContain("codex-mobile start");
+    expect(help).toContain("codexhost-mobile start");
     expect(help).toContain("CODEX_MOBILE_TOKEN");
     expect(version.trim()).toBe(packageJson.version);
   });
