@@ -73,4 +73,43 @@ describe("npm 自动发布流水线", () => {
     expect(publish?.env?.NODE_AUTH_TOKEN).toBeUndefined();
     expect(source).not.toContain("NPM_TOKEN");
   });
+
+  it("可信发布要用的工作流名是可调用的那个文件，不是发起调用的那个", () => {
+    // npmjs.com 上 Trusted Publisher 的 Workflow filename 必须填
+    // publish-npm.yml。原因是 GitHub 的 OIDC 声明里，即便这个 job 是被
+    // build-android.yml 用 workflow_call 调起来的，job_workflow_ref 指的
+    // 仍然是被调用文件本身。实测：
+    //   unlgame/codexhost-mobile/.github/workflows/publish-npm.yml@refs/heads/main
+    // 填成 build-android.yml 的话 npm 匹配不上，会静默退化成匿名发布，
+    // 最后以 E404 PUT .../codexhost-mobile 收场——曾经就这么红过几次。
+    // 所以改名这个文件之前，先去 npm 上把 Trusted Publisher 一起改掉。
+    const publishWorkflow = parse(
+      readFileSync(".github/workflows/publish-npm.yml", "utf8"),
+    ) as PublishWorkflow;
+
+    expect(publishWorkflow.on?.workflow_call).toBeDefined();
+    expect(publishWorkflow.permissions).toMatchObject({
+      contents: "read",
+      "id-token": "write",
+    });
+
+    // 真正执行 npm publish 的步骤只能在这个文件里，
+    // 不能挪到 build-android.yml：挪了 OIDC 声明就变了，npm 那边会失配。
+    const buildAndroid = parse(
+      readFileSync(".github/workflows/build-android.yml", "utf8"),
+    ) as {
+      jobs?: Record<string, { steps?: Array<{ run?: string }> }>;
+    };
+    // 发起调用的那个文件里可以提到 npm publishing（报错信息里就有三处），
+    // 但不能真的去执行 npm publish。
+    const executedInCaller = Object.values(buildAndroid.jobs ?? {})
+      .flatMap((job) => job.steps ?? [])
+      .filter((step) => /\bnpm\s+publish\b/.test(step.run ?? ""));
+    expect(executedInCaller).toEqual([]);
+    expect(
+      Object.values(buildAndroid.jobs ?? {})
+        .flatMap((job) => job.steps ?? [])
+        .some((step) => step.run?.includes("publish-npm.yml")),
+    ).toBe(true);
+  });
 });
