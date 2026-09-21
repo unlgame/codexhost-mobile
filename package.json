@@ -1,6 +1,6 @@
 {
   "name": "codexhost-mobile",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Android client that turns a phone into an external harness terminal for a Windows codex-host",
   "license": "Apache-2.0",
   "type": "module",

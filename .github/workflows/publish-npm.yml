@@ -64,4 +64,9 @@ jobs:
         run: npm pack --dry-run
 
       - name: Publish matching npm package
+        # setup-node 的 registry-url 只会把 .npmrc 指到官方源，
+        # 不会自动带令牌；不显式接 NODE_AUTH_TOKEN 的话，
+        # 这一步永远以 ENEEDAUTH 收场（配置了 secret 也一样）。
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
