@@ -141,6 +141,49 @@ APK 已内置前端时，后端只提供控制面与 WebSocket，根路径返回
 
 ---
 
+## 配置文件
+
+`npm install -g codexhost-mobile` 之后，所有配置都可以写进一个 JSON 文件，不必每次敲一长串环境变量。
+
+```bash
+codexhost-mobile config --init   # 生成配置并随机一个访问口令
+codexhost-mobile config          # 查看最终生效的配置
+codexhost-mobile start           # 用配置启动
+```
+
+默认路径是 `%USERPROFILE%\.codex-mobile\config.json`，可用 `CODEX_MOBILE_CONFIG_FILE` 覆盖。
+
+| 字段 | 对应环境变量 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `host` | `HOST` | `127.0.0.1` | 监听地址；要让手机连就填 `0.0.0.0` |
+| `port` | `PORT` | `18766` | 网关监听端口 |
+| `token` | `CODEX_MOBILE_TOKEN` | 无 | 局域网访问口令，**必填** |
+| `mode` | `CODEX_APP_SERVER_MODE` | `managed` | `codexhost` / `managed` / `external` |
+| `bridgePort` | `CODEXHOST_BRIDGE_PORT` | `18767` | codexhost 小桥下游端口，`0` 表示让系统自己挑 |
+| `hostName` | `CODEX_MOBILE_HOST_NAME` | 取主机名 | 设备显示名称 |
+| `uploadDir` | `CODEX_MOBILE_UPLOAD_DIR` | 默认目录 | 文件上传目录 |
+| `lanIp` | `CODEX_MOBILE_LAN_IP` | 自动探测 | 让 `auth` 固定使用某个局域网 IP |
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 18766,
+  "token": "换成你自己的口令",
+  "mode": "codexhost"
+}
+```
+
+**优先级固定为「环境变量 > 配置文件 > 内置默认值」**，命令行 `--port` 优先于两者。
+CI、测试和一次性覆盖继续走环境变量，配置文件只负责「装完之后想持久化」的那一层，两条路互不干扰。
+
+配置写错时**启动会直接失败并指出是哪个字段**：键名拼错、端口越界、`mode` 取值不合法
+都会报错，不会被静默忽略——拼错一个键名如果被悄悄跳过，用户会以为配上了然后连不上，
+这种失败比直接报错难查得多。
+
+配置文件以 `0600` 权限落盘（Windows 上等效为仅当前用户可读写），因为它里面放着访问口令。
+
+---
+
 ## 签名与密钥
 
 Android 出包使用 **release 签名**，keystore 只来自 GitHub Secrets，**永不入库**。
