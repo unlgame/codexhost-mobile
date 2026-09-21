@@ -602,7 +602,7 @@ describe("移动 App 内置前端流水线", () => {
     expect(verifyArtifact).toContain('"$unpacked/Payload/PakePlus.app"');
     expect(verifyArtifact).toContain(".sha256");
     expect(source).toContain(".ios.isHtml = true");
-    expect(source).toContain("vip.loock.codexmobile");
+    expect(source).toContain("ai.unlgame.codexhostmobile");
     expect(source).toContain("CODE_SIGNING_ALLOWED=NO");
     expect(source).not.toContain("page_url");
     expect(source).not.toMatch(/192\.168\.\d+\.\d+/);

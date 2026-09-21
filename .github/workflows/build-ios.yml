@@ -24,7 +24,7 @@ concurrency:
 env:
   APP_NAME: CodexHostMobile
   DISPLAY_NAME: Codex Host Mobile
-  APP_ID: vip.loock.codexmobile
+  APP_ID: ai.unlgame.codexhostmobile
 
 jobs:
   build:
