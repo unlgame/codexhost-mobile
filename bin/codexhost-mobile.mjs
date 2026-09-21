@@ -48,13 +48,13 @@ if (command === "start") {
 }
 
 function printHelp() {
-  process.stdout.write(`Codex Mobile ${packageJson.version}
+  process.stdout.write(`CodexHost Mobile ${packageJson.version}
 
 用法：
-  codex-mobile start [--port <端口>]
-  codex-mobile auth [--plain]
-  codex-mobile --version
-  codex-mobile --help
+  codexhost-mobile start [--port <端口>]
+  codexhost-mobile auth [--plain]
+  codexhost-mobile --version
+  codexhost-mobile --help
 
 启动参数通过环境变量配置：
   HOST                    监听地址，默认 127.0.0.1
@@ -62,10 +62,11 @@ function printHelp() {
   CODEX_MOBILE_TOKEN      局域网访问口令
   CODEX_MOBILE_HOST_NAME  设备显示名称
   CODEX_MOBILE_UPLOAD_DIR 文件上传目录，默认 ~/.codex/codex-mobile-uploads
-  CODEX_APP_SERVER_MODE   managed 或 external
+  CODEX_APP_SERVER_MODE   codexhost / managed / external，默认 managed
+  CODEXHOST_BRIDGE_PORT   codexhost 小桥下游端口，默认 18767
 
 局域网启动示例：
-  HOST=0.0.0.0 CODEX_MOBILE_TOKEN='<口令>' codex-mobile start
+  HOST=0.0.0.0 CODEX_MOBILE_TOKEN='<口令>' codexhost-mobile start
 `);
 }
 

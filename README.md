@@ -2,9 +2,11 @@
 
 [![Build CodexHostMobile Android APK](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-android.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-android.yml)
 [![Secret Guard](https://github.com/unlgame/codexhost-mobile/actions/workflows/secret-guard.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/secret-guard.yml)
+[![Build CodexHostMobile iOS App](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-ios.yml/badge.svg)](https://github.com/unlgame/codexhost-mobile/actions/workflows/build-ios.yml)
+[![npm](https://img.shields.io/npm/v/codexhost-mobile)](https://www.npmjs.com/package/codexhost-mobile)
 [![GitHub Release](https://img.shields.io/github/v/release/unlgame/codexhost-mobile)](https://github.com/unlgame/codexhost-mobile/releases/latest)
 [![Apache-2.0](https://img.shields.io/github/license/unlgame/codexhost-mobile)](LICENSE)
-![平台](https://img.shields.io/badge/platform-Android-111111)
+![平台](https://img.shields.io/badge/platform-Web%20%7C%20Android%20%7C%20iOS-111111)
 
 **把手机变成 Windows 上 codex-host 的外部 harness 终端。**
 
@@ -14,7 +16,8 @@
 业务数据仍来自真实的 codex-host `AppServerHost`。
 
 [快速开始](#快速开始) · [系统架构](#系统架构) · [运行模式](#运行模式) ·
-[签名与密钥](#签名与密钥) · [项目结构](#项目结构) · [与上游的关系](#与上游的关系)
+[签名与密钥](#签名与密钥) · [移动端构建](#移动端构建) · [项目结构](#项目结构) ·
+[与上游的关系](#与上游的关系)
 
 > 本项目是独立开源项目，与 OpenAI 官方没有隶属关系。
 
@@ -30,20 +33,32 @@
 
 如果 codex-host 没有在运行，网关无法转发请求，App 会显示主机不可用。
 
-### 2. 安装 APK
+### 2. 下载并安装客户端
 
 从 [GitHub Releases](https://github.com/unlgame/codexhost-mobile/releases/latest) 下载：
 
-```text
 CodexHostMobile-v<version>.apk
 CodexHostMobile-v<version>.apk.sha256
+CodexHostMobile-v<version>-unsigned.ipa
+CodexHostMobile-v<version>-unsigned.ipa.sha256
 ```
 
 下载后先校验完整性，再安装。首次安装需要在 Android 系统设置里允许本应用
 「安装未知应用」；App 不支持静默安装。详细步骤见
 [`install.md`](install.md)。
 
+iOS 用户下载未签名 IPA 与 `.sha256`。IPA **未签名**，装到真机或上传 TestFlight 之前
+仍需使用你自己的 Apple Developer 证书重新签名。
+
+如果只想在电脑上用网关，也可以直接装 npm 包，不必下载 APK：
+
+```bash
+npm install -g codexhost-mobile
+codexhost-mobile start
+```
+
 ### 3. 首次配置
+
 
 打开 App，进入「设备设置」，**手动填写** Windows 网关的完整地址（形如
 `http://<Windows-主机地址>:<网关端口>/?token=<访问口令>`，具体值由你启动网关时决定）。
@@ -83,7 +98,7 @@ flowchart LR
 
 ## 运行模式
 
-### `CODEX_APP_SERVER_MODE=codexhost`（本仓库默认）
+### `CODEX_APP_SERVER_MODE=codexhost`（Windows 上的目标模式）
 
 这是 codexhost 模式的入口。网关把上游指向本机的 codex-host 通道，经由命名管道
 连接到 `AppServerHost`，由 codex-host 自行管理会话生命周期。
@@ -93,8 +108,22 @@ CODEX_APP_SERVER_MODE=codexhost \
 codexhost-mobile start
 ```
 
-使用该模式前请确认 codex-host 已在 Windows 主机上运行，否则网关启动后会一直报
-上游不可用。
+注意 `CODEX_APP_SERVER_MODE` 的**代码默认值仍是 `managed`**（沿用上游，便于本机开发）；
+Windows 上要连 codex-host 必须显式设成 `codexhost`。设错或 codex-host 没运行时，
+网关启动后会一直报上游不可用。
+
+小桥自己不拼管道名：它读取 codex-host 每次启动时原子发布的
+
+```text
+%LOCALAPPDATA%\codexhost\remote-control-bridge-v1.json
+```
+
+里面有 `ownerPid`、随机管道名和绝对路径。小桥只认这个文件里的 `pipePath`，并校验
+`ownerPid` 仍然存活；codex-host 重启后文件会被替换，小桥随之重连到新管道。
+排查「连不上」时先看这个文件在不在、`ownerPid` 是否还活着。
+
+小桥下游默认监听 `127.0.0.1:18767`，可用 `CODEXHOST_BRIDGE_PORT` 覆盖；
+下游全部断开后默认保留上游连接，以免丢会话。
 
 ### `managed`
 
@@ -118,10 +147,10 @@ Android 出包使用 **release 签名**，keystore 只来自 GitHub Secrets，**
 
 | Secret | 用途 |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | keystore 文件的单行 base64 |
-| `ANDROID_KEYSTORE_PASSWORD` | 打开 keystore 的 store 口令 |
-| `ANDROID_KEY_ALIAS` | 证书条目别名 |
-| `ANDROID_KEY_PASSWORD` | 使用私钥签名的 key 口令 |
+| `CODEXHOST_MOBILE_KEYSTORE_BASE64` | keystore 文件的单行 base64 |
+| `CODEXHOST_MOBILE_STORE_PASSWORD` | 打开 keystore 的 store 口令 |
+| `CODEXHOST_MOBILE_KEY_ALIAS` | 证书条目别名 |
+| `CODEXHOST_MOBILE_KEY_PASSWORD` | 使用私钥签名的 key 口令 |
 
 配置位置：仓库 **Settings → Secrets and variables → Actions**。
 四个 Secret 缺任何一个，构建都会明确失败，不会退化成 debug 签名。
@@ -142,6 +171,38 @@ Android 出包使用 **release 签名**，keystore 只来自 GitHub Secrets，**
 
 ---
 
+---
+
+## 移动端构建
+
+[最新 GitHub Release](https://github.com/unlgame/codexhost-mobile/releases/latest) 提供：
+
+- Android APK 及 SHA-256 校验文件；
+- 未签名 iOS IPA 及 SHA-256 校验文件；
+- 与同次发布版本号一致的 npm 包 `codexhost-mobile`。
+
+Android App 会检查正式 Release，发现新版本后由用户确认下载，校验成功后调起系统
+安装器。首次使用需要在 Android 系统中允许本应用安装未知应用，App 不支持静默安装。
+
+iOS IPA 未签名，安装到真实设备或上传 TestFlight 前仍需使用 Apple Developer 证书
+签名。
+
+仓库使用固定提交的 PakePlus Android/iOS 项目作为原生容器，并把当前 `dist/` 静态
+资源内置到 App。构建产物不包含局域网 IP、网关 Token 或其他私人配置。
+
+发布流程：
+
+- `main` 的应用相关代码变化会触发 Android、iOS 构建和 GitHub Release；
+- npm 包只在网关、CLI 或包配置变化时随同发布，也可在手动工作流中显式启用；
+- Android、iOS 与同次发布的 npm 包共用一个解析后的版本号。
+
+相关工作流：
+
+- [build-android.yml](.github/workflows/build-android.yml)
+- [build-ios.yml](.github/workflows/build-ios.yml)
+- [publish-npm.yml](.github/workflows/publish-npm.yml)
+- [secret-guard.yml](.github/workflows/secret-guard.yml)
+
 ## 项目结构
 
 ```text
@@ -152,7 +213,7 @@ codexhost-mobile/
 ├── protocol/             # app-server V2 协议基准与生成物
 ├── tests/                # 协议、服务端、UI、CI 与移动端测试
 ├── docs/                 # 设计、签名、Secrets、fork 与更新记录
-└── .github/workflows/    # Android 出包流水线与密钥守卫
+└── .github/workflows/    # Android/iOS 出包流水线、npm 发布与密钥守卫
 ```
 
 ---
@@ -166,13 +227,13 @@ Android 化、release 签名出包与密钥安全改造，并把产品定位收�
 
 主要差异：
 
-- 只发布 Android APK，不再发布 iOS IPA 与 npm 包；
+- 应用相关代码仍会同时产出 Android APK 与未签名 iOS IPA，并随同发布 npm 网关包；
 - 应用包名与品牌改为 `codexhost-mobile` / `ai.unlgame.codexhostmobile`；
 - 增加 release 签名、密钥守卫与 `docs/` 下的签名/Secrets/fork 文档；
 - 运行模式收敛到 `CODEX_APP_SERVER_MODE=codexhost`。
 
 上游仍在维护的通用 Web 功能未被删除，只是本仓库的分发渠道已切换为
-GitHub Releases 上的签名 APK。
+GitHub Releases 上的签名 APK、未签名 iOS IPA 与 npm 上的 `codexhost-mobile` 包。
 
 ---
 
