@@ -112,4 +112,36 @@ describe("npm 自动发布流水线", () => {
         .some((step) => step.run?.includes("publish-npm.yml")),
     ).toBe(true);
   });
+
+  it("发布前会删掉 setup-node 写的空令牌占位，否则可信发布被堵死", () => {
+    // setup-node 传了 registry-url 之后会往项目 .npmrc 写：
+    //   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+    // 本 job 故意不设 NODE_AUTH_TOKEN，npm 会读到空令牌、
+    // 却认为「已配置令牌」，于是跳过 OIDC 直接匿名 PUT，
+    // registry 对未授权发布一律回 404——和「包不存在」同一个码。
+    // 所以必须有个步骤在 npm publish 之前把这行删掉。
+    const source = readFileSync(
+      ".github/workflows/publish-npm.yml",
+      "utf8",
+    );
+    const steps = (parse(source) as PublishWorkflow).jobs?.publish?.steps ?? [];
+    const publishIndex = steps.findIndex((step) =>
+      /\bnpm\s+publish\b/.test(step.run ?? ""),
+    );
+
+    const stripIndex = steps.findIndex((step) =>
+      /_authToken/.test(step.run ?? "") &&
+      /npmrc/.test(step.run ?? ""),
+    );
+
+    expect(stripIndex, "缺少删空令牌占位的步骤").toBeGreaterThan(-1);
+    expect(
+      stripIndex,
+      "删空令牌占位必须出现在 npm publish 之前，否则 npm 已经带着空令牌发出去了",
+    ).toBeLessThan(publishIndex);
+
+    // 而且不能用「把 NODE_AUTH_TOKEN 接回来」这种偷懒解法：
+    // 那等于往仓库里引入一个长期密钥，可信发布的意义就没了。
+    expect(steps[publishIndex].env?.NODE_AUTH_TOKEN).toBeUndefined();
+  });
 });

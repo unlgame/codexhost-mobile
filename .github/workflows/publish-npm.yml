@@ -63,10 +63,35 @@ jobs:
       - name: Verify package contents
         run: npm pack --dry-run
 
+      - name: Drop registry token placeholder
+        # setup-node 的 registry-url 会往项目 .npmrc 写一行占位：
+        #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+        # 这个 job 故意不设 NODE_AUTH_TOKEN（走可信发布，不留长期密钥），
+        # 于是 npm 读到的是个空令牌，却会认为「令牌已配置」，
+        # 于是根本不会去用 OIDC 换短时发布令牌，直接拿空令牌去 PUT。
+        # registry 对未授权的发布一律回 404，和「包不存在」同一个码，
+        # 所以这个症状一直看着像 Trusted Publisher 没配对，
+        # 其实是这一行占位符把 OIDC 流程堵死了。
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f .npmrc ]]; then
+            echo "npmrc before:"
+            cat .npmrc
+            # grep -v 比 sed -i 好读，也不用跟 sed 的分隔符转义较劲。
+            # 全删空时 grep 会返回 1，管道结束时靠 || true 兜住。
+            grep -v '^//registry.npmjs.org/:_authToken=' .npmrc > .npmrc.tmp || true
+            mv .npmrc.tmp .npmrc
+            echo "npmrc after:"
+            cat .npmrc
+          else
+            echo "no project .npmrc"
+          fi
+
       - name: Publish matching npm package
         # 不设 NODE_AUTH_TOKEN 是有意的：这个 job 拿了 id-token: write，
         # 走的是 npm 的可信发布（trusted publishing）。npm CLI 会拿 GitHub
         # Actions 的 OIDC 令牌换一张短时发布令牌，仓库里不留长期密钥。
-        # tests/ci/npm-publish-workflow.test.ts 会把这一点钉死，
-        # 别为了「本地 publish 方便」把 token 塞回来。
+        # 前提是上一步已经把 setup-node 写的空令牌占位行删掉，
+        # 否则 npm 会以为自己有令牌，跳过 OIDC 直接用空令牌发。
         run: npm publish --access public
