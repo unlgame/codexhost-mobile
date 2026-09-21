@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "qrcode": "^1.5.4",
+    "qr-scanner": "^1.4.2",
     "ws": "^8.18.3"
   },
   "devDependencies": {
@@ -68,7 +69,6 @@
     "concurrently": "^10.0.4",
     "cross-env": "^7.0.3",
     "jsdom": "^27.2.0",
-    "qr-scanner": "^1.4.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",

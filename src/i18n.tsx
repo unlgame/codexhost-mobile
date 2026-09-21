@@ -24,6 +24,7 @@ const english: Record<string, string> = {
   "设备名称": "Device name",
   "例如 Mac mini": "For example, Mac mini",
   "网关地址": "Gateway URL",
+  "扫描网关二维码": "Scan gateway QR code",
   "取消": "Cancel",
   "正在测试…": "Testing…",
   "测试并保存": "Test and save",
@@ -47,6 +48,10 @@ const english: Record<string, string> = {
   "当前版本 v{version}": "Current version v{version}",
   "正在检查…": "Checking…",
   "检查更新": "Check for updates",
+  "二维码中缺少访问口令": "The QR code does not include an access token",
+  "二维码无效：{message}": "Invalid QR code: {message}",
+  "二维码不是有效的网关链接": "The QR code is not a valid gateway link",
+  "未能识别二维码": "Could not recognize the QR code",
   "设备身份响应无效": "The device identity response is invalid",
   "{name} 仍有运行任务或待审批请求，确定删除吗？":
     "{name} still has running tasks or pending approvals. Delete it anyway?",
@@ -74,6 +79,16 @@ const english: Record<string, string> = {
   "全部": "All",
   "正在加载机器会话": "Loading device conversations",
   "{name} 有 {count} 个待审批": "{name} has {count} pending approvals",
+  "无法打开摄像头，可从相册选择二维码":
+    "Could not open the camera. Choose a QR code from photos instead",
+  "未识别到二维码，请换一张图片":
+    "No QR code was found. Try another image",
+  "关闭扫码": "Close scanner",
+  "二维码摄像头画面": "QR scanner camera preview",
+  "将另一台设备上的连接二维码放入框内":
+    "Place the connection QR code from another device inside the frame",
+  "正在识别…": "Recognizing…",
+  "从相册选择二维码": "Choose QR code from photos",
   "Codex 需要你的回答": "Codex needs your response",
   "允许修改文件？": "Allow file changes?",
   "授予附加权限？": "Grant additional permissions?",
