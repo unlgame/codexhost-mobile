@@ -1293,14 +1293,15 @@ jobs:
           # apksigner 只在退出码上表达“验签通过”，证书 DN 靠下面这段自己解析。
           # 曾经用 grep -Fq 'Signer #1 certificate DN: ' 硬匹配输出措辞，工具换版本就静默
           # 失败；改成宽松提取，解析不出来时把 $certs 全文打出来再退出。
-          signer_dn="$(grep -Eim1 'Signer[[:space:]]*#1[[:space:]]*certificate[[:space:]]*DN[[:space:]]*:' \
+          signer_dn="$(grep -Eim1 'Signer[[:space:]]*#[0-9]+[[:space:]]*certificate[[:space:]]*DN[[:space:]]*:' \
             "$certs" | sed -E 's/^.*DN[[:space:]]*:[[:space:]]*//' | tr -d '\r')"
           if [[ -z "$signer_dn" ]]; then
             echo "::error::无法从 apksigner --print-certs 输出解析签名证书主题；上面是完整输出" >&2
             exit 1
           fi
+          # GitHub Actions 对 secret 做日志打码，别再把 alias 回显到日志里。
           if [[ "$signer_dn" != *"$CODEXHOST_MOBILE_KEY_ALIAS"* ]]; then
-            echo "::error::APK 签名证书主题不包含预期 alias $CODEXHOST_MOBILE_KEY_ALIAS（实际：$signer_dn）" >&2
+            echo "::error::APK 签名证书主题不包含预期 alias，请核对 CODEXHOST_MOBILE_KEY_ALIAS 与 keystore" >&2
             exit 1
           fi
           if grep -Eqi 'CN=Android[[:space:]]+Debug' "$certs"; then
