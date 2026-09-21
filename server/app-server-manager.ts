@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 
 export interface RuntimeConfig {
-  mode: "managed" | "external";
+  mode: "managed" | "external" | "codexhost";
   upstreamUrl: string;
   upstreamPort: number;
 }
@@ -56,11 +56,36 @@ export function assertGatewaySecurity(
   }
 }
 
+export const DEFAULT_CODEXHOST_BRIDGE_PORT = 18767;
+
+export function resolveCodexHostBridgePort(
+  environment: Record<string, string | undefined> = process.env,
+): number {
+  const raw = environment.CODEXHOST_BRIDGE_PORT?.trim();
+  if (!raw) return DEFAULT_CODEXHOST_BRIDGE_PORT;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(
+      `CODEXHOST_BRIDGE_PORT 必须是 0-65535 之间的整数（当前值：${raw}）`,
+    );
+  }
+  return port;
+}
+
 export function resolveRuntimeConfig(
   environment: Record<string, string | undefined> = process.env,
 ): RuntimeConfig {
-  const mode = environment.CODEX_APP_SERVER_MODE === "external" ? "external" : "managed";
   const upstreamPort = Number(environment.CODEX_APP_SERVER_PORT ?? "18765");
+  if (environment.CODEX_APP_SERVER_MODE === "codexhost") {
+    // codexhost 模式的上游就是本机小桥：由小桥复用同一条 codex-host 管道。
+    const bridgePort = resolveCodexHostBridgePort(environment);
+    return {
+      mode: "codexhost",
+      upstreamPort: bridgePort,
+      upstreamUrl: `ws://127.0.0.1:${bridgePort}`,
+    };
+  }
+  const mode = environment.CODEX_APP_SERVER_MODE === "external" ? "external" : "managed";
   return {
     mode,
     upstreamPort,

@@ -6,8 +6,10 @@ import {
   assertGatewaySecurity,
   resolveGatewayRuntimeConfig,
   resolveRuntimeConfig,
+  resolveCodexHostBridgePort,
   startManagedAppServer,
 } from "./app-server-manager.js";
+import { startCodexHostBridge } from "./codexhost-bridge.js";
 import { readCodexProjectDirectories } from "./codex-projects.js";
 import { writeRuntimeAccess } from "./runtime-access.js";
 
@@ -22,15 +24,20 @@ assertGatewaySecurity(
   host,
   process.env.CODEX_MOBILE_TOKEN,
 );
+const codexhostBridge =
+  runtime.mode === "codexhost"
+    ? await startCodexHostBridge({ port: resolveCodexHostBridgePort(process.env) })
+    : null;
+let gateway: Gateway;
 const managed =
   runtime.mode === "managed" ? await startManagedAppServer(runtime.upstreamPort) : null;
-let gateway: Gateway;
 try {
   gateway = await createGateway({
     host,
     port,
-    mode: runtime.mode,
-    upstreamUrl: runtime.upstreamUrl,
+    mode: runtime.mode === "codexhost" ? "external" : runtime.mode,
+    upstreamUrl:
+      codexhostBridge ? `ws://127.0.0.1:${codexhostBridge.port}` : runtime.upstreamUrl,
     staticDir: gatewayRuntime.serveStatic
       ? process.env.CODEX_MOBILE_STATIC_DIR || resolve(process.cwd(), "dist")
       : null,
@@ -57,6 +64,8 @@ try {
       ),
     appServerReady: async () => {
       try {
+        // codexhost 模式由小桥负责拨号，失败时启动阶段已经抛错。
+        if (runtime.mode === "codexhost") return true;
         const ready = new URL(runtime.upstreamUrl);
         ready.protocol = ready.protocol === "wss:" ? "https:" : "http:";
         ready.pathname = "/readyz";
@@ -73,6 +82,7 @@ try {
   });
 } catch (error) {
   await managed?.close();
+  await codexhostBridge?.close();
   throw error;
 }
 
@@ -91,6 +101,7 @@ async function stop() {
   stopping = true;
   await gateway.close();
   await managed?.close();
+  await codexhostBridge?.close();
   process.exit(0);
 }
 process.on("SIGINT", stop);
