@@ -1211,6 +1211,10 @@ jobs:
           CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
         run: |
           set -euo pipefail
+          # 本步骤大量断言是 grep -q / test -s / test -x：匹配不上时它们只会安静地以
+          # 退出码 1 结束整个步骤，日志里不留任何线索。ERR 陷阱负责把真正失败的命令
+          # 连同行号打出来，否则一次静默失败的排查成本极高。
+          trap 'echo "::error::Prepare and verify APK failed at line $LINENO: $BASH_COMMAND" >&2' ERR
           mkdir -p "$RUNNER_TEMP/apk"
           artifact="$RUNNER_TEMP/apk/CodexHostMobile-v${APP_VERSION}.apk"
           listing="$RUNNER_TEMP/apk/CodexHostMobile-contents.txt"
