@@ -1290,13 +1290,21 @@ jobs:
           # 签名证书信息是 release 关口的审计凭据，本来就不该静默：直接打出来，
           # 之后无论是断言失败还是只想确认签的是哪把钥匙，日志里都有。
           cat "$certs"
-          # apksigner 只在退出码上表达“验签通过”，证书 DN 靠下面这段自己解析。
-          # 曾经用 grep -Fq 'Signer #1 certificate DN: ' 硬匹配输出措辞，工具换版本就静默
-          # 失败；改成宽松提取，解析不出来时把 $certs 全文打出来再退出。
-          signer_dn="$(grep -Eim1 'Signer[[:space:]]*#[0-9]+[[:space:]]*certificate[[:space:]]*DN[[:space:]]*:' \
-            "$certs" | sed -E 's/^.*DN[[:space:]]*:[[:space:]]*//' | tr -d '\r')"
+          # 只认 "certificate DN:" 这个稳定锚点。build-tools 34.0.0 的 --print-certs 输出的是
+          # "V2 Signer: certificate DN: ..."，早期版本才是 "Signer #1 certificate DN: ..."；
+          # 前缀随签名方案和工具版本变化，硬匹配它只会让 grep 静默失败、整个步骤零输出结束。
+          signer_dn="$(grep -Eim1 'certificate[[:space:]]+DN[[:space:]]*:' "$certs" \
+            | sed -E 's/^.*certificate[[:space:]]+DN[[:space:]]*:[[:space:]]*//' | tr -d '\r')"
           if [[ -z "$signer_dn" ]]; then
             echo "::error::无法从 apksigner --print-certs 输出解析签名证书主题；上面是完整输出" >&2
+            exit 1
+          fi
+          # 同一个签名者会按 V2/V3 方案重复出现，所以比的是去重后的 DN 数量。
+          distinct_dn="$(grep -Ei 'certificate[[:space:]]+DN[[:space:]]*:' "$certs" \
+            | sed -E 's/^.*certificate[[:space:]]+DN[[:space:]]*:[[:space:]]*//' | tr -d '\r' \
+            | sort -u | wc -l)"
+          if [[ "$distinct_dn" -ne 1 ]]; then
+            echo "::error::APK 存在多个签名证书（共 ${distinct_dn} 个），请确认 keystore 只包含一个签名证书" >&2
             exit 1
           fi
           # GitHub Actions 对 secret 做日志打码，别再把 alias 回显到日志里。
