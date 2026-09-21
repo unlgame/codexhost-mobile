@@ -1154,7 +1154,10 @@ jobs:
             app/build.gradle.kts
           grep -Fq 'CodexHostMobile-update.apk' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
-          grep -Eq 'CodexHostMobile-v\d+\.\d+\.\d+\.apk' \
+          # AppUpdater.kt 里存的是「正则字面量」而不是真实版本号，所以这里必须用
+          # grep -F：写成 grep -E 会让它去源码里找真正的数字，永远匹配不上，
+          # 而 grep -q 又不打印任何东西，步骤就静默死在这里。
+          grep -Fq 'CodexHostMobile-v\d+\.\d+\.\d+\.apk' \
             app/src/main/java/com/app/pakeplus/AppUpdater.kt
           grep -Fq 'android:allowBackup="false"' app/src/main/AndroidManifest.xml
           grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES' \

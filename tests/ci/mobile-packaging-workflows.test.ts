@@ -523,6 +523,82 @@ describe("移动 App 内置前端流水线", () => {
     );
   });
 
+  it("Android Harden 的静默断言必须能匹配 Python 现写的 Kotlin", () => {
+    const { workflow } = readWorkflow(
+      ".github/workflows/build-android.yml",
+    );
+    const hardenHost = readRunStep(
+      workflow,
+      "Harden and test embedded Android project",
+    );
+
+    // Harden 步骤 = 一段 python3 heredoc + 几十条 grep/test 断言。
+    // 断言全部带 -q，匹配不上就只让 `set -e` 结束步骤，日志里一行错误都没有，
+    // 所以它们必须和 heredoc 真正写出去的文件内容逐字对得上。
+    const pythonStart =
+      hardenHost.indexOf("python3 - <<'PY'") + "python3 - <<'PY'".length;
+    const pythonEnd = hardenHost.indexOf("\nPY\n");
+    expect(pythonStart).toBeGreaterThan(-1);
+    expect(pythonEnd).toBeGreaterThan(pythonStart);
+    const python = hardenHost.slice(pythonStart, pythonEnd);
+
+    // Python 用 r'''...''' 一次性写出 AppUpdater.kt，再靠
+    // .replace("\n          ", "\n") 抹掉 workflow 的 10 空格缩进。
+    const rawStart = python.indexOf("r'''");
+    const rawEnd = python.indexOf("'''", rawStart + 4);
+    expect(rawStart).toBeGreaterThan(-1);
+    expect(rawEnd).toBeGreaterThan(rawStart);
+    const appUpdaterKt = python
+      .slice(rawStart + 4, rawEnd)
+      .replace(/\n {10}/g, "\n")
+      .trim();
+
+    // 只关心 heredoc 之后仍指向 AppUpdater.kt 的 grep 断言：这些文件正是
+    // 上面那段 Python 现写的，匹配不上就是 CI 永远过不去的死断言。
+    const assertions = hardenHost
+      .slice(pythonEnd + "\nPY\n".length)
+      .split("\n")
+      .reduce<string[]>((joined, line) => {
+        const previous = joined[joined.length - 1];
+        if (previous !== undefined && previous.endsWith("\\")) {
+          joined[joined.length - 1] =
+            `${previous.slice(0, -1)} ${line.trim()}`;
+        } else {
+          joined.push(line.trim());
+        }
+        return joined;
+      }, [])
+      .map((line) =>
+        /^grep\s+(-[FEq]+)\s+(['"])((?:(?!\2).)*)\2\s+(\S+)$/.exec(line),
+      )
+      .filter((match): match is RegExpExecArray => match !== null)
+      .filter((match) => match[4].endsWith("AppUpdater.kt"))
+      .map((match) => ({ flags: match[1], pattern: match[3] }));
+
+    // 抓不到就说明这条流水线的断言形状变了，测试会空跑成永真。
+    expect(assertions.length).toBeGreaterThanOrEqual(5);
+
+    for (const { flags, pattern } of assertions) {
+      const matched = flags.includes("F")
+        ? appUpdaterKt.includes(pattern)
+        : new RegExp(pattern).test(appUpdaterKt);
+      expect(
+        matched,
+        `grep ${flags} '${pattern}' 匹配不到 Python 写出的 AppUpdater.kt`
+      ).toBe(true);
+    }
+
+    // 版本号形状那条必须是 -F：Kotlin 里存的是正则字面量 \d，不是真实数字，
+    // 写成 grep -E 就是去源码里找数字，永远匹配不上且不打印任何输出。
+    expect(
+      assertions.some(
+        ({ flags, pattern }) =>
+          flags.includes("F") &&
+          pattern === "CodexHostMobile-v\\d+\\.\\d+\\.\\d+\\.apk",
+      ),
+    ).toBe(true);
+  });
+
   it("iOS 只构建一个内置同一份前端的 Codex Mobile App", () => {
     const { source, workflow } = readWorkflow(".github/workflows/build-ios.yml");
     const installIcon = readRunStep(
