@@ -130,8 +130,18 @@ describe("npm 自动发布流水线", () => {
     //
     // 修法只有一条：不给 registry-url。可信发布本来就不需要它，
     // 删掉之后 .npmrc 和 NODE_AUTH_TOKEN 两个问题一起消失。
-    // 反过来把 NODE_AUTH_TOKEN 接回来「修好」它是偷懒解法——
-    // 那等于往仓库里塞一个长期密钥。
+    // 2026-08-18 用一次性探针脚本验证过，证据是：
+    //   GitHub id_token: 200 <received>        → id-token: write 正常
+    //   registry exchange: 404
+    //     {"message":"OIDC token exchange error - package not found"}
+    // 也就是说这一步只解决「别自己堵死 OIDC」，后面还卡着 npm 注册表
+    // 侧的 Trusted Publisher 没配。那个得登录 npmjs.com 手工配：
+    //   https://www.npmjs.com/package/codexhost-mobile/access
+    // 填 Organizations or users = unlgame、Repository = codexhost-mobile、
+    //   Workflow filename = publish-npm.yml（见下一个测试，不能填 build-android.yml）
+    // 没配就让 exchange 直接 404，oidc.js 静默 return，症状只有
+    // ENEEDAUTH——凭日志看不出来，所以别再把这类静默失败当成本仓库 bug 查。
+    // 反面教材同样是长期密钥：把 NODE_AUTH_TOKEN 接回来「修好」它是偷懒解法。
     const workflow = readWorkflow(PUBLISH_WORKFLOW);
     const steps = workflow.jobs?.publish?.steps ?? [];
     const setupNodes = steps.filter((step) =>
@@ -165,5 +175,24 @@ describe("npm 自动发布流水线", () => {
       stripSteps,
       "setup-node 写的是 $RUNNER_TEMP/.npmrc，那种删仓库根目录 .npmrc 的步骤跑起来会直接短路，请去掉 registry-url",
     ).toEqual([]);
+  });
+
+  it("别让人把 npm 发布改回用长期 NPM_TOKEN 顶上", () => {
+    // ENEEDAUTH 看着像一个凭据问题，很容易顺手指「加个 NPM_TOKEN 就好了」。
+    // 那条路和这次排查的初衷是拧着的：要的就是仓库里不落长期密钥。
+    // 真要让发布跑起来，是去 npmjs.com 配 Trusted Publisher（见上一个测试），
+    // 不是往仓库塞一个还得手改的 secret。
+    const source = readFileSync(PUBLISH_WORKFLOW, "utf8");
+    const workflow = readWorkflow(PUBLISH_WORKFLOW);
+    const steps = workflow.jobs?.publish?.steps ?? [];
+
+    // 上面几条测试是按 setup-node 的 with 块说的，这里换到 secrets 侧：
+    // 这个文件根本不该也不该引用任何 secret。可信发布靠的是 OIDC 的
+    // id_token，不是一个 long-lived secret。
+    for (const step of steps) {
+      expect(step.env ?? {}).not.toHaveProperty("NODE_AUTH_TOKEN");
+      expect(step.env ?? {}).not.toHaveProperty("NPM_TOKEN");
+    }
+    expect(source).not.toMatch(/secrets\./);
   });
 });
