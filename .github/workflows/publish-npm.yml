@@ -28,9 +28,10 @@ jobs:
           set -euo pipefail
           jwt="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npmjs.com" | jq -r .value)"
-          printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+' | {
-            head -c $(( ${#payload} + 4 ));
-          } | base64 -d 2>/dev/null | jq -r '.job_workflow_ref'
+          payload="$(printf '%s' "$jwt" | cut -d. -f2)"
+          pad=$(( (4 - ${#payload} % 4) % 4 ))
+          printf '%s%s' "$payload" "$(printf '=%.0s' $(seq 1 "$pad"))" |
+            tr '_-' '/+' | base64 -d | jq -r '.job_workflow_ref'
 
       - name: Checkout release source
         uses: actions/checkout@v6
