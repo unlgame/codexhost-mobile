@@ -1,17 +1,37 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const concurrentlyBin = resolve("node_modules/.bin/concurrently");
+// Windows 上 concurrently 的入口是 .cmd，不能像 POSIX 那样直接 spawn 可执行文件。
+const concurrentlyBin = resolve(
+  "node_modules/.bin/",
+  process.platform === "win32" ? "concurrently.cmd" : "concurrently",
+);
+const isWindows = process.platform === "win32";
 
+// Windows 上 concurrently 的命令解析会吃掉反斜杠（`\t` 甚至会被当成制表符），
+// 所以路径统一成正斜杠；含空格时才包双引号。POSIX 仍用单引号 shell 转义。
 function shellQuote(value: string): string {
+  if (isWindows) {
+    const normalized = value.replaceAll("\\", "/");
+    return /\s/.test(normalized) ? `"${normalized}"` : normalized;
+  }
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function nodeCommand(source: string): string {
-  return `${shellQuote(process.execPath)} -e ${shellQuote(source)}`;
+// Windows 上把 JS 源码塞进 cmd 命令行会被引号规则搅碎，
+// 因此落成临时 .mjs 文件，只把文件路径交给命令行。
+async function nodeScript(source: string, args: string[] = []): Promise<string> {
+  const argv = args.map(shellQuote).join(" ");
+  if (!isWindows) {
+    return `${shellQuote(process.execPath)} -e ${shellQuote(source)}${argv ? ` ${argv}` : ""}`;
+  }
+  const directory = await mkdtemp(join(tmpdir(), "codex-mobile-dev-script-"));
+  const file = join(directory, "script.mjs");
+  await writeFile(file, source, "utf8");
+  return `node ${shellQuote(file)}${argv ? ` ${argv}` : ""}`;
 }
 
 function waitForExit(
@@ -54,8 +74,43 @@ function isRunning(pid: number): boolean {
     return false;
   }
 }
+// Windows 的进程终止是异步的：taskkill 返回后整棵树可能还在退出中。
+// 轮询等待而不是立刻断言，否则父进程 exit 事件后孙进程可能还没死，偶发失败。
+async function waitForGone(pid: number, timeoutMs = 3_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isRunning(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return !isRunning(pid);
+}
 
+// Windows 没有跨进程的信号传播，child.kill("SIGTERM") 只会终结 cmd.exe 本身，
+// concurrently 与其子进程会被留下。终止整棵进程树才是这里的等价语义。
+function terminateTree(child: ReturnType<typeof spawn>): void {
+  if (!isWindows || child.pid === undefined) {
+    child.kill("SIGTERM");
+    return;
+  }
+  execFileSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+    stdio: "ignore",
+  });
+}
+
+// Windows 上必须整条命令作为一个字符串走 shell：
+// 1) .cmd 不能直接 spawn（Node 会以 EINVAL 拒绝）；
+// 2) 若用参数数组，每条命令会被 concurrently 当成彼此独立的命令。
 function spawnConcurrent(commands: string[]) {
+  if (isWindows) {
+    const line = [
+      shellQuote(concurrentlyBin),
+      "--kill-others",
+      "--success",
+      "first",
+      ...commands.map((command) => `"${command}"`),
+    ].join(" ");
+    return spawn(line, { stdio: "ignore", shell: true });
+  }
   return spawn(
     concurrentlyBin,
     ["--kill-others", "--success", "first", ...commands],
@@ -70,11 +125,15 @@ describe("开发双进程生命周期", () => {
   ])("%s时会关闭另一个子进程", async (_name, childExit, parentExit) => {
     const directory = await mkdtemp(join(tmpdir(), "codex-mobile-dev-"));
     const survivorPidPath = join(directory, "survivor.pid");
-    const survivor = nodeCommand(
-      `require("node:fs").writeFileSync(${JSON.stringify(survivorPidPath)}, String(process.pid)); setInterval(() => {}, 1000)`,
+    const survivor = await nodeScript(
+      `import { writeFileSync } from "node:fs";
+       writeFileSync(process.argv[2], String(process.pid));
+       setInterval(() => {}, 1000);`,
+      [survivorPidPath],
     );
-    const terminator = nodeCommand(
-      `setTimeout(() => process.exit(${childExit}), 80)`,
+    const terminator = await nodeScript(
+      `setTimeout(() => process.exit(Number(process.argv[2])), 80);`,
+      [String(childExit)],
     );
 
     let survivorPid: number | undefined;
@@ -85,7 +144,7 @@ describe("开发双进程生命周期", () => {
       const result = await waitForExit(child);
 
       expect(result.code).toBe(parentExit);
-      expect(isRunning(survivorPid)).toBe(false);
+      expect(await waitForGone(survivorPid), `survivor 仍存活：${survivorPid}`).toBe(true);
     } finally {
       if (survivorPid && isRunning(survivorPid)) {
         process.kill(survivorPid, "SIGKILL");
@@ -98,27 +157,31 @@ describe("开发双进程生命周期", () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-mobile-dev-"));
     const firstPidPath = join(directory, "first.pid");
     const secondPidPath = join(directory, "second.pid");
-    const persistentCommand = (path: string) =>
-      nodeCommand(
-        `require("node:fs").writeFileSync(${JSON.stringify(path)}, String(process.pid)); setInterval(() => {}, 1000)`,
+    const persistentCommand = async (path: string) =>
+      await nodeScript(
+        `import { writeFileSync } from "node:fs";
+         writeFileSync(process.argv[2], String(process.pid));
+         setInterval(() => {}, 1000);`,
+        [path],
       );
 
     let childPids: number[] = [];
 
     try {
       const child = spawnConcurrent([
-        persistentCommand(firstPidPath),
-        persistentCommand(secondPidPath),
+        await persistentCommand(firstPidPath),
+        await persistentCommand(secondPidPath),
       ]);
       childPids = await Promise.all([
         waitForPid(firstPidPath),
         waitForPid(secondPidPath),
       ]);
 
-      expect(child.kill("SIGTERM")).toBe(true);
+      terminateTree(child);
       await waitForExit(child);
 
-      expect(childPids.every((pid) => !isRunning(pid))).toBe(true);
+      const gone = await Promise.all(childPids.map((pid) => waitForGone(pid)));
+      expect(gone.every(Boolean), `仍有子进程存活：${JSON.stringify(childPids)}`).toBe(true);
     } finally {
       for (const pid of childPids) {
         if (isRunning(pid)) {
