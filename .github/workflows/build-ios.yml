@@ -435,7 +435,7 @@ jobs:
                           to: targetFormat
                       ) else {
                           throw NSError(
-                              domain: "CodexMobileRealtimeAudio",
+                              domain: "CodexHostMobileRealtimeAudio",
                               code: 1,
                               userInfo: [
                                   NSLocalizedDescriptionKey:
@@ -628,7 +628,7 @@ jobs:
           package="$RUNNER_TEMP/ipa"
           artifact="$RUNNER_TEMP/CodexHostMobile-v${APP_VERSION}-unsigned.ipa"
           listing="$RUNNER_TEMP/CodexHostMobile-ios-contents.txt"
-          unpacked="$RUNNER_TEMP/CodexMobile-ios-unpacked"
+          unpacked="$RUNNER_TEMP/CodexHostMobile-ios-unpacked"
           test -d "$app"
           test -s "$app/index.html"
           find "$app" -maxdepth 1 -type f -name 'index-*.js' -print -quit \
