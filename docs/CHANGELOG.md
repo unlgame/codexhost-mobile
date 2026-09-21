@@ -6,6 +6,29 @@
 
 ---
 
+
+## [0.2.1] — Windows 适配收尾
+
+### 本地开发
+
+- `npm run dev` 改为由 `bin/dev.mjs` 驱动，替换原先的 `zsh -lc 'source …'` 一行式脚本。
+  `zsh` 与 `VAR=value cmd` 前缀都是 POSIX 专属语法，Windows 上整条命令原本无法执行。
+- 网关环境文件位置统一为 `CodexHostWeb/gateway.env`：Windows 取 `%APPDATA%`，
+  macOS 取 `~/Library/Application Support`，其余取 `$XDG_CONFIG_HOME`；
+  macOS 继续兼容历史目录 `CodexMobileWeb`。`CODEX_MOBILE_ENV_FILE` 仍可显式覆盖。
+- `dev:gateway` / `dev:web` / `start` 改用 `cross-env` 设置环境变量，去掉 shell 前缀语法。
+- 启动器直接以 `node` 调用 concurrently 的 JS 入口，避免 Windows 上经 shell 启动 `.cmd`
+  触发 DEP0190 告警，同时保证 SIGINT 能原样传给 concurrently。
+- 新增 `CODEX_MOBILE_DEV_DRY_RUN=1` 干跑模式，只报告环境文件解析结果与 concurrently 参数。
+- 新增 [`local-development.md`](./local-development.md) 记录本地开发流程。
+
+### 应用标识与更新
+
+- iOS bundle id 由 `vip.loock.codexmobile` 改为 `ai.unlgame.codexhostmobile`，与 Android
+  applicationId 统一。
+- 应用内自动更新的仓库地址、API 地址、缓存键与 APK 资产名改指本 fork 与
+  `CodexHostMobile-v<version>.apk`，此前指向已废弃的上游仓库，自动更新完全失效。
+
 ## [0.2.0] — codexhost-mobile / Android 化
 
 ### 品牌与元信息
@@ -22,7 +45,7 @@
 - **恢复 iOS 构建**：`build-ios.yml` 重新接入主 workflow 的 `ios` job（`uses:` 调用），
   在 macOS runner 上产出**未签名** IPA（`CODE_SIGNING_ALLOWED=NO`），产物为
   `CodexHostMobile-v<version>-unsigned.ipa` 与对应 `.sha256`，并重新进入 Release 资产。
-  iOS 的 bundle id 仍为 `vip.loock.codexmobile`，与 Android applicationId 分开演进。
+  iOS 的 bundle id 与 Android applicationId 统一为 `ai.unlgame.codexhostmobile`。
 - **恢复 npm 发布**：`publish-npm.yml` 重新接入主 workflow 的 `npm` job，
   通过 `publish_npm` 输入（默认关闭）控制；发布前把 `package.json` 版本对齐到本次
   Release 版本号，再跑 `npm test` / `npm run build:package` / `npm pack --dry-run`，

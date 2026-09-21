@@ -120,4 +120,5 @@ apksigner verify --print-certs CodexHostMobile-v<version>.apk
 
 - [`RELEASE.md`](./RELEASE.md)：签名与出包全流程
 - [`SECRETS.md`](./SECRETS.md)：Secrets 用途与轮换
+- [`local-development.md`](./local-development.md)：本地起网关与 Vite、环境文件位置、运行模式
 - [`../install.md`](../install.md)：终端用户安装 APK 的说明
