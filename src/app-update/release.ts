@@ -1,7 +1,7 @@
-export const APP_UPDATE_REPOSITORY = "loock-ai/codex-mobile";
+export const APP_UPDATE_REPOSITORY = "unlgame/codexhost-mobile";
 export const APP_UPDATE_API_URL =
-  "https://api.github.com/repos/loock-ai/codex-mobile/releases/latest";
-export const APP_UPDATE_CACHE_KEY = "codex-mobile:app-update:last-release";
+  "https://api.github.com/repos/unlgame/codexhost-mobile/releases/latest";
+export const APP_UPDATE_CACHE_KEY = "codexhost-mobile:app-update:last-release";
 
 export interface SemanticVersion {
   major: number;
@@ -96,7 +96,7 @@ export function parseGithubRelease(
   const parsed = parseSemanticVersion(tag);
   if (!parsed) return null;
   const version = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-  const expectedName = `CodexMobile-v${version}.apk`;
+  const expectedName = `CodexHostMobile-v${version}.apk`;
   const assets = Array.isArray(payload.assets)
     ? (payload.assets as GithubReleaseAsset[])
     : [];

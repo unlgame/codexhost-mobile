@@ -334,7 +334,7 @@ describe("移动 App 内置前端流水线", () => {
         GITHUB_EVENT_NAME: "workflow_dispatch",
         GITHUB_OUTPUT: join(manualVersionDirectory, "github-output"),
         GITHUB_RUN_NUMBER: "1",
-        GITHUB_REPOSITORY: "loock-ai/codex-mobile",
+        GITHUB_REPOSITORY: "unlgame/codexhost-mobile",
         PATH: `${manualVersionDirectory}:${process.env.PATH ?? ""}`,
         PUBLISH_NPM_REQUESTED: "true",
       };
@@ -595,7 +595,7 @@ describe("移动 App 内置前端流水线", () => {
       "Payload/PakePlus.app/index-.+\\.js",
     );
     expect(verifyArtifact).not.toContain('find "$app/assets"');
-    expect(verifyArtifact).toContain("CodexMobile-ios-unpacked");
+    expect(verifyArtifact).toContain("CodexHostMobile-ios-unpacked");
     expect(verifyArtifact).toContain(
       'node "$RUNNER_TEMP/scan-mobile-assets.cjs"',
     );

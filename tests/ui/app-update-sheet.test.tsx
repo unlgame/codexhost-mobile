@@ -11,9 +11,9 @@ const available: AppUpdateState = {
     tag: "v0.2.1",
     notes: "修复移动端布局\n\n增加自动更新。",
     pageUrl:
-      "https://github.com/loock-ai/codex-mobile/releases/tag/v0.2.1",
+      "https://github.com/unlgame/codexhost-mobile/releases/tag/v0.2.1",
     downloadUrl:
-      "https://github.com/loock-ai/codex-mobile/releases/download/v0.2.1/CodexMobile-v0.2.1.apk",
+      "https://github.com/unlgame/codexhost-mobile/releases/download/v0.2.1/CodexHostMobile-v0.2.1.apk",
     sha256:
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     size: 12_345,

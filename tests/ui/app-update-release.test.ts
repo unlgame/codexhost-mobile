@@ -15,12 +15,12 @@ const releasePayload = {
   body: "自动更新说明",
   draft: false,
   prerelease: false,
-  html_url: "https://github.com/loock-ai/codex-mobile/releases/tag/v0.2.1",
+  html_url: "https://github.com/unlgame/codexhost-mobile/releases/tag/v0.2.1",
   assets: [
     {
-      name: "CodexMobile-v0.2.1.apk",
+      name: "CodexHostMobile-v0.2.1.apk",
       browser_download_url:
-        "https://github.com/loock-ai/codex-mobile/releases/download/v0.2.1/CodexMobile-v0.2.1.apk",
+        "https://github.com/unlgame/codexhost-mobile/releases/download/v0.2.1/CodexHostMobile-v0.2.1.apk",
       digest:
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       size: 12_345,
@@ -31,7 +31,7 @@ const releasePayload = {
 describe("App 自动更新 Release 模型", () => {
   it("使用不可变的本项目 Latest Release 地址", () => {
     expect(APP_UPDATE_API_URL).toBe(
-      "https://api.github.com/repos/loock-ai/codex-mobile/releases/latest",
+      "https://api.github.com/repos/unlgame/codexhost-mobile/releases/latest",
     );
   });
 
@@ -73,7 +73,7 @@ describe("App 自动更新 Release 模型", () => {
             {
               ...releasePayload.assets[0],
               browser_download_url:
-                "https://example.com/CodexMobile-v0.2.1.apk",
+                "https://example.com/CodexHostMobile-v0.2.1.apk",
             },
           ],
         },
