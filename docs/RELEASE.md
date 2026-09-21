@@ -1,7 +1,7 @@
 # 签名密钥与 Release 出包说明
 
-本文件说明 `codexhost-mobile` 的 Android APK 如何通过 GitHub Actions 签名、发布，
-以及签名密钥该如何保管。**签名相关的全部材料只应存在于你的本地机器和仓库 Secrets 里。**
+本文件说明 `codexhost-mobile` 的 Android APK、未签名 iOS IPA 与 npm 包如何通过 GitHub Actions
+构建、发布，以及签名密钥该如何保管。**签名相关的全部材料只应存在于你的本地机器和仓库 Secrets 里。**
 
 ---
 
@@ -31,20 +31,21 @@
 仓库地址：`https://github.com/unlgame/codexhost-mobile`
 
 `.github/workflows/build-android.yml` 会读取下面四个 Secret。**缺少任何一个都会直接失败**，
-错误信息会提示去 Settings → Secrets and variables → Actions 配置。
+
+iOS 与 npm 两条流水线**不需要任何仓库 Secret**：`build-ios.yml` 产出的是未签名 IPA，
+不接触 keystore；`publish-npm.yml` 通过 npm 的 trusted publishing（OIDC，
+`permissions.id-token: write`）完成发布，因此既不存放 npm token，也不写任何口令。
 
 | Secret 名称 | 取值来源 | 说明 |
 | --- | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 codexhost-mobile.keystore` 的完整单行输出 | keystore 文件本身的 base64 编码 |
-| `ANDROID_KEYSTORE_PASSWORD` | 生成 keystore 时你设置的 store 口令 | 打开 keystore 文件所需 |
-| `ANDROID_KEY_ALIAS` | 生成时 `-alias` 指定的值，例如 `codexhostmobile` | 证书条目的别名 |
-| `ANDROID_KEY_PASSWORD` | 生成时设置的 key 口令（与 store 口令可以相同） | 使用私钥签名所需 |
+| `CODEXHOST_MOBILE_KEYSTORE_BASE64` | `base64 -w0 codexhost-mobile.keystore` 的完整单行输出 | keystore 文件本身的 base64 编码 |
+| `CODEXHOST_MOBILE_STORE_PASSWORD` | 生成 keystore 时你设置的 store 口令 | 打开 keystore 文件所需 |
+| `CODEXHOST_MOBILE_KEY_ALIAS` | 生成时 `-alias` 指定的值，例如 `codexhostmobile` | 证书条目的别名 |
+| `CODEXHOST_MOBILE_KEY_PASSWORD` | 生成时设置的 key 口令（与 store 口令可以相同） | 使用私钥签名所需 |
 
-> 命名约定补充：以上是当前 `.github/workflows/build-android.yml` 实际读取的名称。
-> 如果你更希望使用带仓库前缀的 `CODEXHOST_MOBILE_KEYSTORE_BASE64` /
-> `CODEXHOST_MOBILE_STORE_PASSWORD` / `CODEXHOST_MOBILE_KEY_PASSWORD` /
-> `CODEXHOST_MOBILE_KEY_ALIAS` 这套名字，需要同步修改 workflow 里对应的
-> `secrets.*` 引用与 Python 加固脚本里的 `System.getenv(...)` 名称，否则构建会因取不到值而失败。
+> 命名约定：这四个名字在 workflow 的 `secrets.*` 和 Gradle 的 `System.getenv(...)` 里必须一致，
+> 改动其中一侧就要同步另一侧。另外 `ANDROID_KEYSTORE_PATH` 不是 Secret，而是 CI 写到
+> `$GITHUB_ENV` 的本地路径变量，指向 `$RUNNER_TEMP` 下解码出的 keystore 文件。
 
 ### 构建流程做了什么
 
@@ -60,9 +61,9 @@
    signingConfigs {
        create("codexhost") {
            storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH") ?: "")
-           storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-           keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-           keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+           storePassword = System.getenv("CODEXHOST_MOBILE_STORE_PASSWORD")
+           keyAlias = System.getenv("CODEXHOST_MOBILE_KEY_ALIAS")
+           keyPassword = System.getenv("CODEXHOST_MOBILE_KEY_PASSWORD")
        }
    }
    ```
@@ -73,6 +74,13 @@
    断言证书主题包含预期 alias、且不是 debug 签名。
 7. 通过后上传 artifact 并创建 GitHub Release。
 
+iOS 与 npm 两条流水线由同一个 `release` job 串联：
+
+- `build-ios.yml` 在 macOS runner 上构建**未签名** IPA（`CODE_SIGNING_ALLOWED=NO`），
+  产物为 `CodexHostMobile-v<version>-unsigned.ipa` 与对应 `.sha256`；
+- `publish-npm.yml` 跑 `npm ci`、`npm test`、`npm run build:package`、
+  `npm pack --dry-run`，确认无误后 `npm publish --access public`；
+  发布前会先把 `package.json` 的版本对齐到本次 Release 的版本号，避免版本漂移。
 ---
 
 ## 3. 本地生成密钥（仅本地生成，不要在任何在线工具里生成）
@@ -91,7 +99,7 @@ keytool -genkeypair -v -keystore codexhost-mobile.keystore \
 keytool -list -v -keystore codexhost-mobile.keystore
 ```
 
-得到 keystore 的单行 base64（用于 `ANDROID_KEYSTORE_BASE64`）：
+得到 keystore 的单行 base64（用于 `CODEXHOST_MOBILE_KEYSTORE_BASE64`）：
 
 ```bash
 base64 -w0 codexhost-mobile.keystore
@@ -123,19 +131,25 @@ keytool -printcert -jarfile CodexHostMobile-v<version>.apk
 ```
 CodexHostMobile-v<version>.apk
 CodexHostMobile-v<version>.apk.sha256
+CodexHostMobile-v<version>-unsigned.ipa
+CodexHostMobile-v<version>-unsigned.ipa.sha256
 ```
+
+npm 包与 Release 同版本号，包名为 `codexhost-mobile`。
 
 下载途径：
 
-1. **Actions Artifacts**：进入 Actions → 对应 workflow run → Artifacts → `CodexHostMobile-android`。
-   artifact 保留 7 天。
+1. **Actions Artifacts**：进入 Actions → 对应 workflow run → Artifacts → `CodexHostMobile-android`
+   （APK）或 `CodexHostMobile-ios-unsigned`（IPA）。artifact 保留 7 天。
 2. **GitHub Release**：push 到 `main` 且构建通过后，release job 会创建
-   `v<version>` 标签的 Release，直接附带 APK 与 `.sha256`。
+   `v<version>` 标签的 Release，直接附带 APK、IPA 与各自的 `.sha256`。
+3. **npm**：`npm view codexhost-mobile version` 应与 Release 版本一致。
 
 下载后建议校验：
 
 ```bash
 sha256sum --check CodexHostMobile-v<version>.apk.sha256
+sha256sum --check CodexHostMobile-v<version>-unsigned.ipa.sha256
 ```
 
 ---
@@ -180,9 +194,9 @@ npm run build
 # 3. 按 .github/workflows/build-android.yml 的步骤准备 PakePlus 工程并
 #    ./gradlew assembleRelease，同时导出：
 export ANDROID_KEYSTORE_PATH="$PWD/codexhost-mobile.keystore"
-export ANDROID_KEYSTORE_PASSWORD='<your-store-password>'
-export ANDROID_KEY_ALIAS='<your-alias>'
-export ANDROID_KEY_PASSWORD='<your-key-password>'
+export CODEXHOST_MOBILE_STORE_PASSWORD='<your-store-password>'
+export CODEXHOST_MOBILE_KEY_ALIAS='<your-alias>'
+export CODEXHOST_MOBILE_KEY_PASSWORD='<your-key-password>'
 
 # 4. 校验签名
 apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk

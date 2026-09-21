@@ -22,7 +22,7 @@
 
 ---
 
-## 二、下载 APK
+## 二、下载 APK / IPA
 
 打开仓库的 Releases 页面：
 
@@ -30,7 +30,7 @@
 https://github.com/unlgame/codexhost-mobile/releases/latest
 ```
 
-下载这两个文件：
+下载这两个文件（APK）：
 
 ```text
 CodexHostMobile-v<version>.apk
@@ -39,20 +39,32 @@ CodexHostMobile-v<version>.apk.sha256
 
 `<version>` 是具体版本号，例如 `0.2.1`。
 
+iOS 用户改下载这两个文件（未签名 IPA）：
+
+```text
+CodexHostMobile-v<version>-unsigned.ipa
+CodexHostMobile-v<version>-unsigned.ipa.sha256
+```
+
+> IPA **未签名**。装到真机或上传 TestFlight 之前，仍需用你自己的 Apple Developer
+> 证书重新签名。
+
+如果只想在电脑上跑网关、不需要装 App，也可以跳过 APK，直接装 npm 包
+`codexhost-mobile`（见第十节）。
 ---
 
 ## 三、校验完整性
 
-安装前先确认 APK 没有被篡改或下载不完整。
+安装前先确认下载的文件没有被篡改或下载不完整。
 
 在电脑上（或手机的 Termux 里）执行：
 
 ```bash
 sha256sum --check CodexHostMobile-v<version>.apk.sha256
+sha256sum --check CodexHostMobile-v<version>-unsigned.ipa.sha256
 ```
 
 输出 `OK` 才继续。如果显示 `FAILED`，说明文件损坏，请重新下载。
-
 ---
 
 ## 四、安装 APK
@@ -144,9 +156,30 @@ App 启动后会检查正式 Release。发现新版本时会提示你确认，�
 
 ---
 
+## 十、通过 npm 安装网关（可选）
+
+如果你不需要手机 App，只希望在 Windows 上跑网关，可以直接安装 npm 包，
+版本与当次 Release 保持一致：
+
+```bash
+npm install -g codexhost-mobile
+codexhost-mobile --version
+```
+
+确认版本号与 GitHub Release 一致后再启动：
+
+```bash
+CODEX_APP_SERVER_MODE=codexhost codexhost-mobile start
+```
+
+npm 包由 `.github/workflows/publish-npm.yml` 随同 Release 发布，只在网关、CLI 或
+包配置变化时触发，也可以在 Actions 里手动启用。
+
+---
+
 ## 相关文档
 
-- [`README.md`](README.md) —— 项目概览、架构与运行模式
+- [`README.md`](README.md) —— 项目概览、架构、运行模式与移动端构建
 - [`docs/RELEASE.md`](docs/RELEASE.md) —— 出包与签名流程
 - [`docs/SECRETS.md`](docs/SECRETS.md) —— 签名 Secret 说明
 - [`docs/FORK.md`](docs/FORK.md) —— fork 后自行构建 APK

@@ -18,13 +18,20 @@ on:
       - "docs/assets/app-icon/codex-mobile-app-icon-1024.png"
       - "scripts/compose-mobile-app-icon.sh"
       - ".github/workflows/build-android.yml"
+      - ".github/workflows/build-ios.yml"
+      - ".github/workflows/publish-npm.yml"
       - ".github/workflows/secret-guard.yml"
   workflow_dispatch:
     inputs:
       release_version:
-        description: Version to build
+        description: Version to build; required when publishing npm
         required: false
         type: string
+      publish_npm:
+        description: Also publish the npm gateway package
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -43,7 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       app_version: ${{ steps.version.outputs.app_version }}
+      build_ios: ${{ steps.version.outputs.build_ios }}
       release_tag: ${{ steps.version.outputs.release_tag }}
+      publish_npm: ${{ steps.version.outputs.publish_npm }}
 
     steps:
       - name: Checkout repository
@@ -56,19 +65,39 @@ jobs:
         id: version
         shell: bash
         env:
+          ENABLE_IOS_BUILD: ${{ vars.ENABLE_IOS_BUILD }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_NPM_REQUESTED: ${{ inputs.publish_npm }}
           REQUESTED_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           fallback="$(node -p "require('./package.json').version")"
           requested="${REQUESTED_VERSION#v}"
           version="$fallback"
+          if [[
+            "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
+            "$PUBLISH_NPM_REQUESTED" == "true" &&
+            -z "$requested"
+          ]]; then
+            echo "Manual npm publishing requires release_version" >&2
+            exit 1
+          fi
           latest=""
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+          if [[
+            "$GITHUB_EVENT_NAME" == "push" ||
+            (
+              "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
+              "$PUBLISH_NPM_REQUESTED" == "true"
+            )
+          ]]; then
             if ! latest="$(
               gh api "repos/${GITHUB_REPOSITORY}/releases/latest" \
                 --jq '.tag_name'
             )"; then
+              if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+                echo "Unable to resolve the latest GitHub Release for manual npm publishing" >&2
+                exit 1
+              fi
               latest=""
             fi
           fi
@@ -94,10 +123,42 @@ jobs:
               throw new Error(`Invalid release version: ${version}`);
             }
           ' "$version"
+          if [[
+            "$GITHUB_EVENT_NAME" == "workflow_dispatch" &&
+            "$PUBLISH_NPM_REQUESTED" == "true" &&
+            "$version" != "$next_version"
+          ]]; then
+            echo "Manual npm publishing requires the next GitHub Release patch version: $next_version" >&2
+            exit 1
+          fi
           echo "APP_VERSION=$version" >> "$GITHUB_ENV"
           echo "APP_VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "app_version=$version" >> "$GITHUB_OUTPUT"
           echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
+          build_ios=true
+          if [[ "$ENABLE_IOS_BUILD" == "false" ]]; then
+            build_ios=false
+          fi
+          echo "build_ios=$build_ios" >> "$GITHUB_OUTPUT"
+          publish_npm=false
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            base="${{ github.event.before }}"
+            if [[ "$base" =~ ^0+$ ]]; then
+              base="$(git rev-list --max-parents=0 "$GITHUB_SHA")"
+            fi
+            if ! git diff --quiet "$base" "$GITHUB_SHA" -- \
+              server/ \
+              bin/ \
+              tsconfig.npm.json \
+              package.json \
+              package-lock.json \
+              .github/workflows/publish-npm.yml; then
+              publish_npm=true
+            fi
+          elif [[ "$PUBLISH_NPM_REQUESTED" == "true" ]]; then
+            publish_npm=true
+          fi
+          echo "publish_npm=$publish_npm" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build CodexHostMobile Android
@@ -340,52 +401,52 @@ jobs:
       - name: Decode release signing keystore
         shell: bash
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CODEXHOST_MOBILE_KEYSTORE_BASE64: ${{ secrets.CODEXHOST_MOBILE_KEYSTORE_BASE64 }}
+          CODEXHOST_MOBILE_STORE_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_STORE_PASSWORD }}
+          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
+          CODEXHOST_MOBILE_KEY_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           missing=()
-          if [[ -z "${ANDROID_KEYSTORE_BASE64//[[:space:]]/}" ]]; then
-            missing+=("ANDROID_KEYSTORE_BASE64")
+          if [[ -z "${CODEXHOST_MOBILE_KEYSTORE_BASE64//[[:space:]]/}" ]]; then
+            missing+=("CODEXHOST_MOBILE_KEYSTORE_BASE64")
           fi
-          if [[ -z "$ANDROID_KEYSTORE_PASSWORD" ]]; then
-            missing+=("ANDROID_KEYSTORE_PASSWORD")
+          if [[ -z "$CODEXHOST_MOBILE_STORE_PASSWORD" ]]; then
+            missing+=("CODEXHOST_MOBILE_STORE_PASSWORD")
           fi
-          if [[ -z "$ANDROID_KEY_ALIAS" ]]; then
-            missing+=("ANDROID_KEY_ALIAS")
+          if [[ -z "$CODEXHOST_MOBILE_KEY_ALIAS" ]]; then
+            missing+=("CODEXHOST_MOBILE_KEY_ALIAS")
           fi
-          if [[ -z "$ANDROID_KEY_PASSWORD" ]]; then
-            missing+=("ANDROID_KEY_PASSWORD")
+          if [[ -z "$CODEXHOST_MOBILE_KEY_PASSWORD" ]]; then
+            missing+=("CODEXHOST_MOBILE_KEY_PASSWORD")
           fi
           if (( ${#missing[@]} > 0 )); then
-            echo "::error::缺少 Android release 签名 Secret：${missing[*]}。请在仓库 Settings → Secrets and variables → Actions 配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD" >&2
+            echo "::error::缺少 Android release 签名 Secret：${missing[*]}。请在仓库 Settings → Secrets and variables → Actions 配置 CODEXHOST_MOBILE_KEYSTORE_BASE64 / CODEXHOST_MOBILE_STORE_PASSWORD / CODEXHOST_MOBILE_KEY_ALIAS / CODEXHOST_MOBILE_KEY_PASSWORD" >&2
             exit 1
           fi
           # GitHub 会自动 mask Secret，这里显式再加一层，避免口令出现在任何日志里
-          echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
-          echo "::add-mask::$ANDROID_KEY_PASSWORD"
-          echo "::add-mask::$ANDROID_KEY_ALIAS"
+          echo "::add-mask::$CODEXHOST_MOBILE_STORE_PASSWORD"
+          echo "::add-mask::$CODEXHOST_MOBILE_KEY_PASSWORD"
+          echo "::add-mask::$CODEXHOST_MOBILE_KEY_ALIAS"
           keystore="$RUNNER_TEMP/codexhost-mobile.keystore"
           rm -f "$keystore"
           # 只解码到 $RUNNER_TEMP，绝不写入 workspace，避免被 upload-artifact 或缓存带出
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore"
+          printf '%s' "$CODEXHOST_MOBILE_KEYSTORE_BASE64" | base64 -d > "$keystore"
           test -s "$keystore"
           # 只接受 JKS(fe ed fe ed) 或 PKCS12(30 82) 容器，最终以 keytool 能否打开为准
           if ! head -c 4 "$keystore" | od -An -tx1 | grep -Eq 'fe ed fe ed|30 82'; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 不是有效的 Java keystore，请确认 base64 -w0 的完整输出" >&2
+            echo "::error::CODEXHOST_MOBILE_KEYSTORE_BASE64 不是有效的 Java keystore，请确认 base64 -w0 的完整输出" >&2
             exit 1
           fi
           # 用 stdin 提供口令，避免口令出现在进程参数里
-          listing="$(printf '%s\n' "$ANDROID_KEYSTORE_PASSWORD" \
+          listing="$(printf '%s\n' "$CODEXHOST_MOBILE_STORE_PASSWORD" \
             | keytool -list -v -keystore "$keystore" 2>/dev/null || true)"
           if [[ -z "$listing" ]]; then
-            echo "::error::无法用 ANDROID_KEYSTORE_PASSWORD 打开 keystore，请检查密钥口令" >&2
+            echo "::error::无法用 CODEXHOST_MOBILE_STORE_PASSWORD 打开 keystore，请检查密钥口令" >&2
             exit 1
           fi
-          if ! grep -Fq "Alias name: $ANDROID_KEY_ALIAS" <<<"$listing"; then
-            echo "::error::keystore 中不存在别名 $ANDROID_KEY_ALIAS，请检查 ANDROID_KEY_ALIAS" >&2
+          if ! grep -Fq "Alias name: $CODEXHOST_MOBILE_KEY_ALIAS" <<<"$listing"; then
+            echo "::error::keystore 中不存在别名 $CODEXHOST_MOBILE_KEY_ALIAS，请检查 CODEXHOST_MOBILE_KEY_ALIAS" >&2
             exit 1
           fi
           echo "ANDROID_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
@@ -895,9 +956,9 @@ jobs:
           signing_entry_lines = [
               f'create("{signing_config_name}") {{',
               '    storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH") ?: "")',
-              '    storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")',
-              '    keyAlias = System.getenv("ANDROID_KEY_ALIAS")',
-              '    keyPassword = System.getenv("ANDROID_KEY_PASSWORD")',
+              '    storePassword = System.getenv("CODEXHOST_MOBILE_STORE_PASSWORD")',
+              '    keyAlias = System.getenv("CODEXHOST_MOBILE_KEY_ALIAS")',
+              '    keyPassword = System.getenv("CODEXHOST_MOBILE_KEY_PASSWORD")',
               '}',
           ]
           signing_assignment = (
@@ -1033,7 +1094,7 @@ jobs:
               raise SystemExit(
                   "Release signing configuration was not applied exactly once"
               )
-          if "ANDROID_KEYSTORE_PASSWORD" not in gradle_source:
+          if "CODEXHOST_MOBILE_STORE_PASSWORD" not in gradle_source:
               raise SystemExit("Release signing configuration was not injected")
           gradle_path.write_text(gradle_source)
           PY
@@ -1075,11 +1136,11 @@ jobs:
           grep -Fq "versionName = \"$APP_VERSION\"" app/build.gradle.kts
           grep -Fq 'storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH")' \
             app/build.gradle.kts
-          grep -Fq 'storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")' \
+          grep -Fq 'storePassword = System.getenv("CODEXHOST_MOBILE_STORE_PASSWORD")' \
             app/build.gradle.kts
-          grep -Fq 'keyAlias = System.getenv("ANDROID_KEY_ALIAS")' \
+          grep -Fq 'keyAlias = System.getenv("CODEXHOST_MOBILE_KEY_ALIAS")' \
             app/build.gradle.kts
-          grep -Fq 'keyPassword = System.getenv("ANDROID_KEY_PASSWORD")' \
+          grep -Fq 'keyPassword = System.getenv("CODEXHOST_MOBILE_KEY_PASSWORD")' \
             app/build.gradle.kts
           grep -Fq 'signingConfig = signingConfigs.getByName("codexhost")' \
             app/build.gradle.kts
@@ -1119,14 +1180,14 @@ jobs:
         working-directory: pakeplus
         shell: bash
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CODEXHOST_MOBILE_KEYSTORE_BASE64: ${{ secrets.CODEXHOST_MOBILE_KEYSTORE_BASE64 }}
+          CODEXHOST_MOBILE_STORE_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_STORE_PASSWORD }}
+          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
+          CODEXHOST_MOBILE_KEY_PASSWORD: ${{ secrets.CODEXHOST_MOBILE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ -z "${ANDROID_KEYSTORE_PATH:-}" || ! -s "$ANDROID_KEYSTORE_PATH" ]]; then
-            echo "::error::release keystore 缺失，请先运行 Decode release signing keystore 步骤；请在仓库 Settings → Secrets and variables → Actions 配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD" >&2
+            echo "::error::release keystore 缺失，请先运行 Decode release signing keystore 步骤；请在仓库 Settings → Secrets and variables → Actions 配置 CODEXHOST_MOBILE_KEYSTORE_BASE64 / CODEXHOST_MOBILE_STORE_PASSWORD / CODEXHOST_MOBILE_KEY_ALIAS / CODEXHOST_MOBILE_KEY_PASSWORD" >&2
             exit 1
           fi
           chmod +x ./gradlew
@@ -1136,7 +1197,7 @@ jobs:
         working-directory: pakeplus
         shell: bash
         env:
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CODEXHOST_MOBILE_KEY_ALIAS: ${{ secrets.CODEXHOST_MOBILE_KEY_ALIAS }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/apk"
@@ -1221,8 +1282,8 @@ jobs:
             echo "::error::无法解析 APK 签名证书主题" >&2
             exit 1
           fi
-          if [[ "$signer_dn" != *"$ANDROID_KEY_ALIAS"* ]]; then
-            echo "::error::APK 签名证书主题不包含预期 alias $ANDROID_KEY_ALIAS（实际：$signer_dn）" >&2
+          if [[ "$signer_dn" != *"$CODEXHOST_MOBILE_KEY_ALIAS"* ]]; then
+            echo "::error::APK 签名证书主题不包含预期 alias $CODEXHOST_MOBILE_KEY_ALIAS（实际：$signer_dn）" >&2
             exit 1
           fi
           if grep -Fq 'CN=Android Debug' "$certs"; then
@@ -1246,6 +1307,25 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  ios:
+    name: Build Codex Host Mobile iOS
+    needs: version
+    if: needs.version.outputs.build_ios == 'true'
+    uses: ./.github/workflows/build-ios.yml
+    with:
+      app_version: ${{ needs.version.outputs.app_version }}
+
+  npm:
+    name: Publish codexhost-mobile npm package
+    needs: version
+    if: needs.version.outputs.publish_npm == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-npm.yml
+    with:
+      app_version: ${{ needs.version.outputs.app_version }}
+
   release:
     name: Publish CodexHostMobile Release
     if: >-
@@ -1253,10 +1333,18 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.version.result == 'success' &&
-      needs.build.result == 'success'
+      needs.build.result == 'success' &&
+      (
+        needs.ios.result == 'success' ||
+        (
+          needs.version.outputs.build_ios == 'false' &&
+          needs.ios.result == 'skipped'
+        )
+      )
     needs:
       - version
       - build
+      - ios
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1267,22 +1355,43 @@ jobs:
           name: CodexHostMobile-android
           path: release
 
+      - name: Download verified unsigned IPA
+        if: needs.version.outputs.build_ios == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: CodexHostMobile-ios-unsigned
+          path: release
+
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ needs.version.outputs.app_version }}
           RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
+          IOS_BUILD_ENABLED: ${{ needs.version.outputs.build_ios }}
         run: |
           set -euo pipefail
           apk="release/CodexHostMobile-v${APP_VERSION}.apk"
           apk_checksum="${apk}.sha256"
+          ipa="release/CodexHostMobile-v${APP_VERSION}-unsigned.ipa"
+          ipa_checksum="${ipa}.sha256"
           test -s "$apk"
           test -s "$apk_checksum"
           (
             cd release
             sha256sum --check "CodexHostMobile-v${APP_VERSION}.apk.sha256"
           )
+          release_assets=("$apk" "$apk_checksum")
+          if [[ "$IOS_BUILD_ENABLED" == "true" ]]; then
+            test -s "$ipa"
+            test -s "$ipa_checksum"
+            (
+              cd release
+              sha256sum --check \
+                "CodexHostMobile-v${APP_VERSION}-unsigned.ipa.sha256"
+            )
+            release_assets+=("$ipa" "$ipa_checksum")
+          fi
           cleanup_draft() {
             gh release delete "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
@@ -1291,7 +1400,7 @@ jobs:
           }
           trap cleanup_draft ERR INT TERM
           gh release create "$RELEASE_TAG" \
-            "$apk" "$apk_checksum" \
+            "${release_assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Codex Host Mobile $RELEASE_TAG" \

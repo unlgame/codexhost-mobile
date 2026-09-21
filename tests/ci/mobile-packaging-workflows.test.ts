@@ -194,10 +194,10 @@ describe("移动 App 内置前端流水线", () => {
     expect(buildFrontend).toContain("169\\.254");
     expect(buildFrontend).toContain("::1");
     expect(buildFrontend).toContain(
-      "https://api.github.com/repos/loock-ai/codex-mobile/releases/",
+      "https://api.github.com/repos/unlgame/codexhost-mobile/releases/",
     );
     expect(buildFrontend).toContain(
-      "https://github.com/loock-ai/codex-mobile/releases/",
+      "https://github.com/unlgame/codexhost-mobile/releases/",
     );
     expect(runAssetScanner(scanner, 'const socket = "wss://gateway.example/ws";').status)
       .not.toBe(0);
@@ -243,7 +243,7 @@ describe("移动 App 内置前端流水线", () => {
     );
     expect(verifyArtifact).toContain("protectionLevel");
     expect(verifyArtifact).toContain('{"signature", "0x2"}');
-    expect(verifyArtifact).toContain("CodexMobile-unpacked-assets");
+    expect(verifyArtifact).toContain("CodexHostMobile-unpacked-assets");
     expect(verifyArtifact).toContain(
       'node "$RUNNER_TEMP/scan-mobile-assets.cjs" "$unpacked_assets/assets"',
     );
@@ -261,7 +261,7 @@ describe("移动 App 内置前端流水线", () => {
     expect(readProjectFile("src/styles.css")).toContain(
       "html.native-webview { --browser-edge-top: 0px; --browser-edge-bottom: 0px; }",
     );
-    expect(source).toContain("vip.loock.codexmobile");
+    expect(source).toContain("ai.unlgame.codexhostmobile");
     expect(source).not.toContain("matrix:");
     expect(source).not.toContain("page_url");
     expect(source).not.toMatch(/192\.168\.\d+\.\d+/);
@@ -285,7 +285,6 @@ describe("移动 App 内置前端流水线", () => {
         "docs/assets/app-icon/codex-mobile-app-icon-1024.png",
         "scripts/compose-mobile-app-icon.sh",
         ".github/workflows/build-android.yml",
-        ".github/workflows/build-ios.yml",
       ]),
     );
     expect(workflow.on).toHaveProperty("workflow_dispatch");
@@ -486,7 +485,7 @@ describe("移动 App 内置前端流水线", () => {
     expect(publish).toContain("gh release edit");
     expect(publish).toContain("--draft=false");
     expect(publish).toContain("--cleanup-tag");
-    expect(publish).toContain("CodexMobile-v");
+    expect(publish).toContain("CodexHostMobile-v");
     expect(publish).toContain("-unsigned.ipa");
     expect(publish).toContain('if [[ "$IOS_BUILD_ENABLED" == "true" ]]');
     expect(publish).toContain('release_assets=("$apk" "$apk_checksum")');
@@ -509,7 +508,7 @@ describe("移动 App 内置前端流水线", () => {
     expect(hardenHost).toContain("FileProvider");
     expect(hardenHost).toContain("update_file_paths");
     expect(hardenHost).toContain(
-      "https://github.com/loock-ai/codex-mobile/releases/download/",
+      "https://github.com/unlgame/codexhost-mobile/releases/download/",
     );
     expect(hardenHost).toContain("MessageDigest.getInstance(\"SHA-256\")");
     expect(hardenHost).toContain("fun appVersion(): String");
@@ -564,10 +563,10 @@ describe("移动 App 内置前端流水线", () => {
     expect(buildFrontend).toContain("169\\.254");
     expect(buildFrontend).toContain("::1");
     expect(buildFrontend).toContain(
-      "https://api.github.com/repos/loock-ai/codex-mobile/releases/",
+      "https://api.github.com/repos/unlgame/codexhost-mobile/releases/",
     );
     expect(buildFrontend).toContain(
-      "https://github.com/loock-ai/codex-mobile/releases/",
+      "https://github.com/unlgame/codexhost-mobile/releases/",
     );
     expect(runAssetScanner(scanner, 'const socket = "ws://gateway.example/ws";').status)
       .not.toBe(0);

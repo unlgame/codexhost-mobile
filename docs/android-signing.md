@@ -21,7 +21,7 @@ keytool -genkeypair -v -keystore codexhost-mobile.keystore \
 | 参数 | 说明 |
 | --- | --- |
 | `-keystore codexhost-mobile.keystore` | 生成的 keystore 文件名，保持本地即可 |
-| `-alias codexhostmobile` | 证书条目别名，之后要填进 `ANDROID_KEY_ALIAS` |
+| `-alias codexhostmobile` | 证书条目别名，之后要填进 `CODEXHOST_MOBILE_KEY_ALIAS` |
 | `-keyalg RSA -keysize 4096` | 算法与密钥长度 |
 | `-validity 10000` | 有效期天数（约 27 年） |
 
@@ -40,10 +40,10 @@ keytool -list -v -keystore codexhost-mobile.keystore
 
 | Secret 名称 | 取值来源 |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 codexhost-mobile.keystore` 的单行输出 |
-| `ANDROID_KEYSTORE_PASSWORD` | 生成时设置的 store 口令 |
-| `ANDROID_KEY_ALIAS` | 生成时 `-alias` 指定的值 |
-| `ANDROID_KEY_PASSWORD` | 生成时设置的 key 口令 |
+| `CODEXHOST_MOBILE_KEYSTORE_BASE64` | `base64 -w0 codexhost-mobile.keystore` 的单行输出 |
+| `CODEXHOST_MOBILE_STORE_PASSWORD` | 生成时设置的 store 口令 |
+| `CODEXHOST_MOBILE_KEY_ALIAS` | 生成时 `-alias` 指定的值 |
+| `CODEXHOST_MOBILE_KEY_PASSWORD` | 生成时设置的 key 口令 |
 
 ```bash
 base64 -w0 codexhost-mobile.keystore

@@ -19,10 +19,16 @@
 
 ### 构建与发布
 
-- **移除 iOS 构建**：删除 `build-ios.yml`，主 workflow 中 `build_ios` 相关逻辑、
-  版本计算里的 iOS 输入、以及 Release 资产中的 iOS 产物全部移除。
-- **移除 npm 发布**：删除 `publish-npm.yml`，`publish_npm` 逻辑与 npm 相关输入、
-  Release 资产一并移除。
+- **恢复 iOS 构建**：`build-ios.yml` 重新接入主 workflow 的 `ios` job（`uses:` 调用），
+  在 macOS runner 上产出**未签名** IPA（`CODE_SIGNING_ALLOWED=NO`），产物为
+  `CodexHostMobile-v<version>-unsigned.ipa` 与对应 `.sha256`，并重新进入 Release 资产。
+  iOS 的 bundle id 仍为 `vip.loock.codexmobile`，与 Android applicationId 分开演进。
+- **恢复 npm 发布**：`publish-npm.yml` 重新接入主 workflow 的 `npm` job，
+  通过 `publish_npm` 输入（默认关闭）控制；发布前把 `package.json` 版本对齐到本次
+  Release 版本号，再跑 `npm test` / `npm run build:package` / `npm pack --dry-run`，
+  最后 `npm publish --access public`。发布走 npm trusted publishing（OIDC，
+  `permissions.id-token: write`），**不引入 npm token Secret**。
+- **Release 资产重新包含 iOS 与 npm**：APK、IPA 与同版本 npm 包共用一个解析后的版本号。
 - **移除多余的 `release.yml`**：Release 创建统一收敛到主 workflow 的 `release` job。
 - **Android 改为 release 签名**：
   - `assembleDebug` → `assembleRelease`。
@@ -34,7 +40,6 @@
   - 构建后用 `apksigner verify --print-certs` 校验签名，并断言证书主题包含预期
     alias、且不是 debug 证书；不硬编码证书指纹。
   - 产物统一为 `CodexHostMobile-v<version>.apk` 与对应 `.sha256`。
-- **Release 资产收敛**：只保留 APK 与 `.sha256`。
 
 ### 密钥安全
 
@@ -63,6 +68,9 @@
 - 新增 `docs/FORK.md`：fork 后构建自己的 APK。
 - 新增 `docs/android-signing.md`：本地生成 keystore 与本地校验签名。
 - `README.md` / `install.md` 重写为 codexhost-mobile 品牌，安装改为手填网关地址。
+- 补回 iOS / npm 发布说明：`README.md` 新增「移动端构建」章节、iOS 徽章与
+  `Web | Android | iOS` 平台栏；`install.md` 增加 IPA 下载校验与 npm 网关安装两节；
+  `docs/RELEASE.md`、`docs/SECRETS.md`、`docs/FORK.md` 同步说明 iOS 与 npm 两条流水线。
 
 ---
 
@@ -71,4 +79,5 @@
 本仓库是 `loock-ai/codex-mobile` 的下游分支。上游提供 Web 客户端与网关的通用能力；
 本仓库在此之上做了 Android 化、签名出包与密钥安全改造，并把产品定位调整为
 codexhost 模式的外部 harness 终端。上游仍在维护的通用 Web 功能未被删除，
-只是本仓库的构建产物与分发渠道已切换为 GitHub Releases 上的签名 APK。
+只是本仓库的构建产物与分发渠道已切换为 GitHub Releases 上的签名 APK、未签名 iOS IPA，
+以及 npm 上的 `codexhost-mobile` 包。
