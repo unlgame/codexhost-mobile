@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyGatewayConfig,
@@ -33,9 +33,26 @@ describe("resolveConfigPath", () => {
   });
 
   it("支持 CODEX_MOBILE_CONFIG_FILE 覆盖路径", () => {
-    expect(
-      resolveConfigPath({ CODEX_MOBILE_CONFIG_FILE: "E:/tmp/custom.json" }),
-    ).toBe("E:\\tmp\\custom.json");
+    const path = resolveConfigPath({
+      CODEX_MOBILE_CONFIG_FILE: "E:/tmp/custom.json",
+    });
+    // Windows 上 resolve 会把正斜杠归一成反斜杠，所以要单独钉死这一条——
+    // 产品主要跑在 Windows，分隔符写错会让用户照着日志找不到文件。
+    // POSIX 上 "E:/tmp" 只是个普通片段，会被拼到 cwd 后面，
+    // 那是正确行为：那边本来就没有盘符这回事。
+    if (process.platform === "win32") {
+      expect(path).toBe("E:\\tmp\\custom.json");
+    } else {
+      // POSIX 没有盘符概念，"E:/tmp/custom.json" 只是普通片段，
+      // resolve 会原样拼到 cwd 后面。这里要断言的是片段没被丢掉、
+      // 也没被提前截断（拼错就会静默指向别的目录）。
+      expect(path.startsWith(process.cwd())).toBe(true);
+      expect(path).toContain("E:/tmp/custom.json");
+    }
+    // 两个平台共同的不变性：必须是绝对路径，且文件名还是用户指定的那个，
+    // 否则配置会被写到别处，启动时又读不回来。
+    expect(isAbsolute(path)).toBe(true);
+    expect(basename(path)).toBe("custom.json");
   });
 });
 
