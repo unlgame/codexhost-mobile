@@ -126,6 +126,14 @@ import {
   shouldMarkThreadUnread,
   writeUnreadThreadIds,
 } from "./features/threads/thread-unread";
+import { busyHintFor } from "./app-server/busy-error";
+import { loadHarnessPluginNames } from "./app-server/harness-models";
+import {
+  CODEXHOST_THREAD_USAGE_UPDATED_METHOD,
+  inspectThreadUsage,
+  threadUsageFromNotification,
+  type ThreadUsageFields,
+} from "./app-server/thread-usage";
 import { t, useI18n } from "./i18n";
 
 type AnyRecord = Record<string, any>;
@@ -235,6 +243,12 @@ function BackendWorkspace({
     Record<string, AnyRecord>
   >({});
   const [rateLimits, setRateLimits] = useState<AnyRecord | null>(null);
+  const [threadUsageByThread, setThreadUsageByThread] = useState<
+    Record<string, ThreadUsageFields>
+  >({});
+  const [harnessPluginNames, setHarnessPluginNames] = useState<
+    Record<string, string>
+  >({});
   const [pendingAction, setPendingAction] = useState("");
   const [notice, setNotice] = useState("");
   const [picker, setPicker] = useState<ComposerPicker>(null);
@@ -593,6 +607,26 @@ function BackendWorkspace({
               [params.threadId]: params.tokenUsage,
             }));
           }
+          if (message.method === CODEXHOST_THREAD_USAGE_UPDATED_METHOD) {
+            // codex-host 只广播 { threadId } 作为变更信号；快照回读 inspect。
+            const inline = threadUsageFromNotification(params);
+            const threadId = String(params.threadId ?? "");
+            if (inline) {
+              setThreadUsageByThread((current) => ({
+                ...current,
+                [threadId]: inline,
+              }));
+            } else if (threadId) {
+              void inspectThreadUsage(client, threadId).then((usage) => {
+                if (usage) {
+                  setThreadUsageByThread((current) => ({
+                    ...current,
+                    [threadId]: usage,
+                  }));
+                }
+              });
+            }
+          }
           if (
             message.method === "account/rateLimits/updated" &&
             params.rateLimits
@@ -825,6 +859,10 @@ function BackendWorkspace({
               availableProfiles[0]?.id ||
               "";
             setModels(modelResult.data);
+            void loadHarnessPluginNames(client).then((names) => {
+              if (disposed || manager.client(backend.id) !== source) return;
+              setHarnessPluginNames(Object.fromEntries(names));
+            });
             setRateLimits(rateLimitResult);
             setPermissionProfiles(availableProfiles);
             setSelectedModel((current) => current || configuredModel);
@@ -887,6 +925,7 @@ function BackendWorkspace({
                   ["inProgress", "in_progress", "running"].includes(lastTurn?.status),
                 );
               }
+              void refreshThreadUsageSnapshot(currentThread.id);
             }
           }
           } catch (reason) {
@@ -895,6 +934,7 @@ function BackendWorkspace({
               manager.client(backend.id) === source
             ) {
               setRefreshing(false);
+              notifyBusy(reason);
               setError(
                 reason instanceof Error ? reason.message : String(reason),
               );
@@ -1047,6 +1087,7 @@ function BackendWorkspace({
       setBusy(
         ["inProgress", "in_progress", "running"].includes(lastTurn?.status),
       );
+      void refreshThreadUsageSnapshot(threadId);
 
       if (session.thread.cwd) {
         void client
@@ -1066,6 +1107,7 @@ function BackendWorkspace({
         setBusy(false);
         setSteering(false);
         setConversationLoadState("error");
+        notifyBusy(reason);
         setConversationLoadError(
           reason instanceof Error ? reason.message : String(reason),
         );
@@ -1202,6 +1244,7 @@ function BackendWorkspace({
           setDraftFiles((current) =>
             current.length ? current : pendingFiles,
           );
+          notifyBusy(reason);
           setError(reason instanceof Error ? reason.message : String(reason));
         }
       } finally {
@@ -1367,6 +1410,7 @@ function BackendWorkspace({
         setDraftFiles((current) =>
           current.length ? current : pendingFiles,
         );
+        notifyBusy(reason);
         setError(reason instanceof Error ? reason.message : String(reason));
       }
     } finally {
@@ -1421,7 +1465,15 @@ function BackendWorkspace({
     if (activeThreadAccessMode !== "interactive") return;
     const turn = active?.turns?.at(-1);
     if (!turn) return;
-    await clientRef.current?.request("turn/interrupt", { threadId: active!.id, turnId: turn.id });
+    try {
+      await clientRef.current?.request("turn/interrupt", {
+        threadId: active!.id,
+        turnId: turn.id,
+      });
+    } catch (reason) {
+      notifyBusy(reason);
+      throw reason;
+    }
   }
 
   function showNotice(message: string) {
@@ -1430,6 +1482,27 @@ function BackendWorkspace({
       () => setNotice((current) => (current === message ? "" : current)),
       1800,
     );
+  }
+
+  /** 切换/挂载线程时拉一次用量基线；非 codexhost 后端静默失败。 */
+  function refreshThreadUsageSnapshot(threadId: unknown) {
+    const id = String(threadId ?? "");
+    const client = clientRef.current;
+    if (!id || !client) return;
+    void inspectThreadUsage(client, id).then((usage) => {
+      if (!usage) return;
+      setThreadUsageByThread((current) =>
+        String(activeRef.current?.id ?? "") === id || current[id]
+          ? { ...current, [id]: usage }
+          : current,
+      );
+    });
+  }
+
+  /** busy 准入冲突只提示、不重试不排队。 */
+  function notifyBusy(reason: unknown) {
+    const hint = busyHintFor(reason);
+    if (hint) showNotice(t(hint));
   }
 
   async function togglePinned() {
@@ -1792,6 +1865,7 @@ function BackendWorkspace({
           accessMode={activeThreadAccessMode}
           resumeError={activeThreadResumeError}
           tokenUsage={tokenUsageByThread[active.id] ?? null}
+          usage={threadUsageByThread[active.id] ?? null}
           rateLimits={rateLimits}
           pendingAction={pendingAction}
           selectedServiceTier={selectedServiceTier}
@@ -1872,6 +1946,7 @@ function BackendWorkspace({
         speedOptions={speedOptions}
         permissionModes={permissionModes}
         models={models}
+        harnessPluginNames={harnessPluginNames}
         selectedEffort={selectedEffort}
         selectedModel={selectedModel}
         selectedModelLabel={selectedModelLabel}

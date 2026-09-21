@@ -35,16 +35,16 @@ describe("悬浮状态布局", () => {
       styles.match(
         /(?:^|\n)\.conversation-header \.round-button svg\s*\{([^}]*)\}/,
       )?.[1] ?? "";
-    const contextRule =
-      styles.match(/(?:^|\n)\.context-usage-button\s*\{([^}]*)\}/)?.[1] ?? "";
+    const chipRule =
+      styles.match(/(?:^|\n)\.thread-usage-chip\s*\{([^}]*)\}/)?.[1] ?? "";
 
     expect(headerRule).toContain("min-height: 60px");
     expect(buttonRule).toContain("width: 44px");
     expect(buttonRule).toContain("height: 44px");
     expect(iconRule).toContain("width: 23px");
     expect(iconRule).toContain("height: 23px");
-    expect(contextRule).toContain("width: 44px");
-    expect(contextRule).toContain("height: 44px");
+    expect(chipRule).toContain("height: 44px");
+    expect(chipRule).toContain("text-overflow: ellipsis");
   });
 
   it("对话详情右上角两个按钮共用无分割线胶囊容器", () => {
@@ -57,7 +57,7 @@ describe("悬浮状态布局", () => {
         /(?:^|\n)\.conversation-header-actions > button\s*\{([^}]*)\}/,
       )?.[1] ?? "";
 
-    expect(groupRule).toContain("width: 88px");
+    expect(groupRule).not.toContain("width: 88px");
     expect(groupRule).toContain("height: 44px");
     expect(groupRule).toContain("border-radius: 22px");
     expect(groupRule).toContain("background: #f7f7f7");

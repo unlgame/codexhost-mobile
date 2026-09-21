@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import type { ThreadUsageFields } from "../../app-server/thread-usage";
 import { AppServerClient } from "../../app-server/client";
 import type { OlderTurnsLoadState } from "../../app-server/thread-session";
 import type { BackendConfig } from "../../backends/types";
@@ -20,9 +21,10 @@ import { groupConversationTurns } from "../../ui/conversation";
 import { ErrorBanner } from "../../ui/ErrorBanner";
 import { TurnCard } from "./Timeline";
 import {
-  ContextUsageButton,
   ConversationActionMenu,
   ConversationStatusSheet,
+  ThreadUsageChip,
+  ThreadUsagePanel,
 } from "./ConversationControls";
 import { ImagePreviewSheet } from "./sheets/ImagePreviewSheet";
 import { useConversationAutoScroll } from "./conversation-scroll";
@@ -129,6 +131,7 @@ export function ConversationPage({
   accessMode,
   resumeError,
   tokenUsage,
+  usage,
   rateLimits,
   pendingAction,
   selectedServiceTier,
@@ -175,6 +178,7 @@ export function ConversationPage({
   accessMode: "interactive" | "readOnly";
   resumeError: string;
   tokenUsage: Record<string, any> | null;
+  usage: ThreadUsageFields | null;
   rateLimits: Record<string, any> | null;
   pendingAction: string;
   selectedServiceTier: string | null;
@@ -204,6 +208,7 @@ export function ConversationPage({
   const [previewImage, setPreviewImage] = useState<DraftImage | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const turns = groupConversationTurns(active.turns ?? []);
   const isNewChat = !active.id;
   const hasDraft = Boolean(draft.trim() || draftImages.length || draftFiles.length);
@@ -271,11 +276,13 @@ export function ConversationPage({
             role="group"
             aria-label={t("会话详情操作")}
           >
-            <ContextUsageButton
-              tokenUsage={tokenUsage}
-              onClick={() => {
+            <ThreadUsageChip
+              usage={usage}
+              expanded={usageOpen}
+              onToggle={() => {
                 setActionsOpen(false);
-                setStatusOpen(true);
+                setStatusOpen(false);
+                setUsageOpen((current) => !current);
               }}
             />
             <button
@@ -285,6 +292,7 @@ export function ConversationPage({
               aria-expanded={actionsOpen}
               onClick={() => {
                 setStatusOpen(false);
+                setUsageOpen(false);
                 setActionsOpen((current) => !current);
               }}
             >
@@ -293,6 +301,15 @@ export function ConversationPage({
           </div>
         )}
       </header>
+      <ThreadUsagePanel
+        open={usageOpen}
+        usage={usage}
+        onClose={() => setUsageOpen(false)}
+        onOpenStatus={() => {
+          setUsageOpen(false);
+          setStatusOpen(true);
+        }}
+      />
       <ConversationActionMenu
         open={actionsOpen}
         readOnly={accessMode === "readOnly"}

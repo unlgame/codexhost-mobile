@@ -1,6 +1,11 @@
 import { Chevron } from "../../ui/icons";
 import { t } from "../../i18n";
 import {
+  harnessModelLabel,
+  splitModelCatalog,
+  type HarnessModelOption,
+} from "../../app-server/harness-models";
+import {
   modelOptionMeta,
   type ModelCatalogEntry,
   type PermissionMode,
@@ -20,6 +25,7 @@ export function ComposerSettings({
   speedOptions,
   permissionModes,
   models,
+  harnessPluginNames,
   selectedEffort,
   selectedModel,
   selectedModelLabel,
@@ -37,6 +43,7 @@ export function ComposerSettings({
   speedOptions: Array<{ id: string | null; label: string; description: string }>;
   permissionModes: PermissionMode[];
   models: ModelCatalogEntry[];
+  harnessPluginNames?: Record<string, string>;
   selectedEffort: string | null;
   selectedModel: string;
   selectedModelLabel: string;
@@ -50,6 +57,8 @@ export function ComposerSettings({
   onChoosePermissionMode: (mode: PermissionModeId) => void;
 }) {
   if (!picker) return null;
+  const { official, harness } = splitModelCatalog(models as unknown[]);
+  const officialModels = official as ModelCatalogEntry[];
   return (
     <div className="composer-popover-backdrop" onClick={() => onPickerChange(null)}>
       <section
@@ -109,10 +118,10 @@ export function ComposerSettings({
             </button>
             <div className="popover-divider" />
             <div className="popover-options model-options" aria-label={t("模型列表")}>
-              {models.map((option) => {
+              {officialModels.map((option) => {
                 const value = option.model;
                 const selected = value === selectedModel;
-                const meta = modelOptionMeta(option);
+                const meta = modelOptionMeta(option as ModelCatalogEntry);
                 return (
                   <button
                     key={option.id || value}
@@ -132,6 +141,39 @@ export function ComposerSettings({
                 );
               })}
             </div>
+            {harness.length > 0 && (
+              <>
+                <div className="popover-divider" />
+                <div className="popover-eyebrow">{t("外部 Harness")}</div>
+                <div className="popover-options model-options" aria-label={t("外部 Harness")}>
+                  {harness.map((option: HarnessModelOption) => {
+                    const selected = option.model === selectedModel;
+                    return (
+                      <button
+                        key={option.model}
+                        className={selected ? "selected" : ""}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          onChooseModel(option.model);
+                          onPickerChange(null);
+                        }}
+                      >
+                        <span>
+                          <strong>
+                            {harnessModelLabel(
+                              option,
+                              harnessPluginNames?.[option.harnessId],
+                            )}
+                          </strong>
+                          <small>{option.description}</small>
+                        </span>
+                        <i>{selected ? "✓" : ""}</i>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </>
         )}
         {picker === "speed" && (

@@ -1,7 +1,13 @@
-import type { CSSProperties } from "react";
 import { AppIcon, titleOf, type DisplayRecord } from "../../ui/app-display";
 import { ActionSheet } from "../../ui/ActionSheet";
+import { Chevron } from "../../ui/icons";
 import { getActiveLocale, t } from "../../i18n";
+import {
+  formatPercent,
+  formatTokenCount,
+  formatUsd,
+  type ThreadUsageFields,
+} from "../../app-server/thread-usage";
 
 type AnyRecord = Record<string, any>;
 
@@ -75,25 +81,105 @@ function formatResetTime(timestamp: number | null) {
   }).format(new Date(timestamp * 1000));
 }
 
-export function ContextUsageButton({
-  tokenUsage,
-  onClick,
+/** 紧凑 chip：只显示上下文占比，点击展开完整用量面板。 */
+export function ThreadUsageChip({
+  usage,
+  expanded,
+  onToggle,
 }: {
-  tokenUsage: AnyRecord | null;
-  onClick: () => void;
+  usage: ThreadUsageFields | null;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const usage = contextUsageView(tokenUsage);
-  const degrees = Math.round((usage?.usedPercent ?? 0) * 3.6);
+  const percent = usage?.contextUsagePercent ?? null;
   return (
     <button
-      className="context-usage-button"
       type="button"
-      aria-label={t("查看上下文占用情况")}
-      onClick={onClick}
-      style={{ "--usage-degrees": `${degrees}deg` } as CSSProperties}
+      className={`thread-usage-chip${expanded ? " expanded" : ""}`}
+      aria-expanded={expanded}
+      aria-label={t("查看用量")}
+      onClick={onToggle}
     >
-      <i />
+      {percent === null
+        ? t("用量")
+        : t("上下文 {percent}", { percent: formatPercent(percent) })}
     </button>
+  );
+}
+
+function usageRows(usage: ThreadUsageFields): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    [
+      t("上下文"),
+      usage.contextUsagePercent === null || usage.contextWindowTokens === null
+        ? "—"
+        : `${formatPercent(usage.contextUsagePercent)} / ${formatTokenCount(
+            usage.contextWindowTokens,
+          )}`
+    ],
+    [t("缓存读取"), formatTokenCount(usage.cachedInputTokens)],
+    [t("缓存写入"), formatTokenCount(usage.cacheWriteInputTokens)],
+    [t("Token 总数"), formatTokenCount(usage.totalTokens)],
+    [
+      t("输入 / 输出"),
+      `${formatTokenCount(usage.inputTokens)} / ${formatTokenCount(usage.outputTokens)}`,
+    ],
+    [t("会话费用估算"), formatUsd(usage.totalCostUsd)],
+  ];
+  if (usage.planFiveHourUsedPercent !== null) {
+    rows.push([t("5 小时限额"), formatPercent(usage.planFiveHourUsedPercent)]);
+  }
+  if (usage.planSevenDayUsedPercent !== null) {
+    rows.push([t("7 天限额"), formatPercent(usage.planSevenDayUsedPercent)]);
+  }
+  return rows;
+}
+
+/** 点击 chip 展开的用量面板，再点一次收起。 */
+export function ThreadUsagePanel({
+  open,
+  usage,
+  onClose,
+  onOpenStatus,
+}: {
+  open: boolean;
+  usage: ThreadUsageFields | null;
+  onClose: () => void;
+  onOpenStatus: () => void;
+}) {
+  return (
+    <section
+      className={`thread-usage-panel${open ? " open" : ""}`}
+      aria-label={t("用量")}
+      aria-hidden={!open}
+    >
+      <header>
+        <strong>{t("用量")}</strong>
+        <button type="button" aria-label={t("收起用量")} onClick={onClose}>
+          ×
+        </button>
+      </header>
+      {usage ? (
+        <dl>
+          {usageRows(usage).map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="thread-usage-empty">{t("暂无用量数据")}</p>
+      )}
+      <button
+        type="button"
+        className="thread-usage-status-link"
+        onClick={onOpenStatus}
+      >
+        <span>{t("会话状态")}</span>
+        <Chevron />
+      </button>
+    </section>
   );
 }
 

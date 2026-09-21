@@ -51,6 +51,7 @@ function renderConversation(
       accessMode={composer.accessMode ?? "interactive"}
       resumeError={composer.resumeError ?? ""}
       tokenUsage={null}
+      usage={null}
       rateLimits={null}
       pendingAction=""
       selectedServiceTier={null}
@@ -86,7 +87,7 @@ describe("会话详情历史分页", () => {
     const group = view.getByRole("group", { name: "会话详情操作" });
 
     expect(
-      within(group).getByRole("button", { name: "查看上下文占用情况" }),
+      within(group).getByRole("button", { name: "查看用量" }),
     ).not.toBeNull();
     expect(
       within(group).getByRole("button", { name: "会话操作" }),
