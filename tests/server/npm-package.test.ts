@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -202,5 +203,100 @@ describe("npm 全局安装包", () => {
     expect(cliSource).toContain("CODEX_MOBILE_VERSION");
     expect(serverSource).toContain("process.env.CODEX_MOBILE_STATIC_DIR");
     expect(serverSource).toContain("process.env.CODEX_MOBILE_VERSION");
+  });
+
+  it("package.json 与 package-lock.json 的根依赖逐项对齐", () => {
+    const lock = JSON.parse(
+      readFileSync(resolve("package-lock.json"), "utf8"),
+    );
+    const root = lock.packages[""];
+    // 根少声明一项，npm ci 就不再拿锁当事实源，而是重新解析整棵树；
+    // 前端依赖漏进 devDependencies 更糟：--production 装出一个白屏的包。
+    for (const [name, range] of Object.entries(packageJson.dependencies)) {
+      expect(root.dependencies?.[name], `${name} 应出现在锁的 dependencies`).toBe(
+        range,
+      );
+    }
+    for (const [name, range] of Object.entries(
+      packageJson.devDependencies,
+    )) {
+      expect(root.devDependencies?.[name], `${name} 应出现在锁的 devDependencies`).toBe(
+        range,
+      );
+    }
+    // 锁里多出来的根依赖同样说明漂移，两个方向都要对齐。
+    expect(Object.keys(root.dependencies ?? {}).sort()).toEqual(
+      Object.keys(packageJson.dependencies).sort(),
+    );
+    expect(Object.keys(root.devDependencies ?? {}).sort()).toEqual(
+      Object.keys(packageJson.devDependencies).sort(),
+    );
+  });
+
+  it("打包配置不把测试代码编译进 npm-dist", () => {
+    const npmTsconfig = JSON.parse(
+      readFileSync(resolve("tsconfig.npm.json"), "utf8"),
+    );
+    // 少了 exclude，server 下的 *.test.ts 会被一起编译进 npm-dist/server，
+    // 跟着 tarball 发给用户（codexhost-bridge.test.js 就这么漏出去过）。
+    // 注意 tsconfig.npm.json 必须是严格 JSON：这里要用 JSON.parse 读它。
+    expect(npmTsconfig.exclude).toEqual(
+      expect.arrayContaining(["server/**/*.test.ts"]),
+    );
+    // 但类型检查必须仍然覆盖测试文件，否则测试代码会悄悄失去类型保护。
+    const typecheckTsconfig = JSON.parse(
+      readFileSync(resolve("tsconfig.server.json"), "utf8"),
+    );
+    expect(typecheckTsconfig.include).toContain("server");
+    expect(typecheckTsconfig.compilerOptions.noEmit).toBe(true);
+  });
+
+  it("运行时代码只导入生产依赖，构建代码的导入都被声明过", () => {
+    // 发布出去的包里，真正在用户机器上跑的是 bin/ 和 npm-dist/server
+    // （prepack 时由 server/ 编译而来）。这两处 import 的包必须落在
+    // dependencies，否则 npm i -g 之后一启动就 MODULE_NOT_FOUND。
+    // src/ 相反：它被 vite 整个打进 dist/，构建期用完就扔，
+    // 放 devDependencies 才对，放 dependencies 只会让每个用户
+    // 白装一份浏览器才用的包（qr-scanner 就踩过这个）。
+    const collect = (directory: string, runtime: boolean) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const full = resolve(directory, entry.name);
+        if (entry.isDirectory()) {
+          collect(full, runtime);
+          continue;
+        }
+        // 测试文件不进包（files 里只有 bin/dist/npm-dist/server），
+        // 它们 import vitest 这类开发期工具是应该的。
+        if (/\.test\.tsx?$/.test(entry.name)) continue;
+        if (!/\.tsx?$/.test(entry.name)) continue;
+        const source = readFileSync(full, "utf8");
+        for (const match of source.matchAll(
+          /(?:from|import)\s+["']([^"']+)["']/g,
+        )) {
+          const spec = match[1];
+          // 相对路径是自家模块，node: 是内置，都不算依赖声明。
+          if (/^[./]/.test(spec) || spec.startsWith("node:")) continue;
+          const name = spec.startsWith("@")
+            ? spec.split("/").slice(0, 2).join("/")
+            : spec.split("/")[0];
+          const allowed = runtime
+            ? Object.keys(packageJson.dependencies)
+            : [
+                ...Object.keys(packageJson.dependencies),
+                ...Object.keys(packageJson.devDependencies),
+              ];
+          expect(
+            allowed,
+            runtime
+              ? `${full} 是运行时代码，导入了 ${spec} 但它不是生产依赖`
+              : `${full} 导入了 ${spec}，但 package.json 里没声明这个包`
+          ).toContain(name);
+        }
+      }
+    };
+
+    collect(resolve("bin"), true);
+    collect(resolve("server"), true);
+    collect(resolve("src"), false);
   });
 });

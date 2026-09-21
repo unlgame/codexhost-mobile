@@ -17,3 +17,12 @@ local.properties
 *.apk
 *.aab
 pakeplus/
+
+# ---- 只认 npm：本仓库用 package-lock.json 单一事实源 ----
+# 这两份是遗留的 pnpm 产物，留着会让人误装、
+# 也会让 package.json 和 package-lock.json 的根依赖悄悄打架
+# （qr-scanner 就被写进过 dependencies，而它只该是构建期依赖，
+#  两边不一致时 npm ci 会拿理想树重新解析，锁就不再是事实源）。
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.pnpm-store/
