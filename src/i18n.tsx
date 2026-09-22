@@ -411,6 +411,7 @@ const english: Record<string, string> = {
   "归档失败，请重试": "Failed to archive. Try again",
   "沿用线程模型": "Use conversation model",
   "默认模型": "Default model",
+  "默认": "Default",
   "沿用线程权限": "Use conversation permissions",
   "从会话列表选择对话": "Select a conversation from the list",
   "添加设备后即可连接 Codex。": "Add a device to connect to Codex.",

@@ -1258,6 +1258,13 @@ function BackendWorkspace({
     setConversationLoadState("loading");
     setActiveThreadAccessMode("interactive");
     setActiveThreadResumeError("");
+    // 在 thread/inspect 回来之前先清掉 harness 相关状态：否则中间那个 chip 会
+    // 短暂显示上一条线程的模型，而这条线程绑的是哪个 harness 要等 inspect 才知道。
+    setActiveHarnessId(null);
+    setHarnessInspection(null);
+    setSelectedHarnessModelId(null);
+    setSelectedHarnessThinkingId(null);
+    setSelectedHarnessPermissionModeId(null);
     resetOlderTurns();
     activeThreadTargetRef.current = thread.id;
     setActive({
@@ -1789,13 +1796,18 @@ function BackendWorkspace({
     harnessInspection?.thinkingOptions.find(
       (option) => option.id === selectedHarnessThinkingId,
     )?.label ?? "";
-  const agentChipModelLabel = selectedHarnessId
-    ? [harnessPluginName(selectedHarnessId), harnessModelLabel]
-        .filter(Boolean)
-        .join(" · ")
+  // 中间那个 chip 只显示模型：harness 归左边那个 chip 管，这里再显示一遍只会
+  // 让人以为它能选 harness。
+  //
+  // 取值必须看「线程实际绑定的 harness」而不是选择器状态：之前用的是
+  // selectedHarnessId，于是在 picker 里点过 claude-code 之后，再打开一条 Pi
+  // 线程，中间就会显示成 Claude Code——线程明明绑的是 pi。
+  const chipHarnessId = active?.id ? activeHarnessId : selectedHarnessId;
+  const agentChipModelLabel = chipHarnessId
+    ? harnessModelLabel || t("默认模型")
     : selectedModelLabel;
-  const agentChipEffort = selectedHarnessId
-    ? harnessThinkingLabel || t("默认模型")
+  const agentChipEffort = chipHarnessId
+    ? harnessThinkingLabel || t("默认")
     : selectedEffort;
   const speedOptions = speedOptionsForModel(selectedModelEntry);
   const selectedSpeedLabel =
@@ -1988,8 +2000,15 @@ function BackendWorkspace({
     openSequenceRef.current += 1;
     activeThreadTargetRef.current = null;
     // 新会话不再绑定任何 harness；选择器重新可用（harness 只在 thread/start
-    // 时绑定，会话中换不了）。
+    // 时绑定，会话中换不了）。同时清掉上一条线程带来的 harness 目录与选中态，
+    // 否则中间那个 chip 会继续显示上一条线程的模型。
     setActiveHarnessId(null);
+    setSelectedHarnessId(null);
+    setHarnessInspection(null);
+    setHarnessInspectError("");
+    setSelectedHarnessModelId(null);
+    setSelectedHarnessThinkingId(null);
+    setSelectedHarnessPermissionModeId(null);
     resetDraftContext();
     const defaultPermissionMode =
       defaultNewChatPermissionMode(
