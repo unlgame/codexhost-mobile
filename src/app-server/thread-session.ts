@@ -56,10 +56,15 @@ function errorMessage(reason: unknown) {
 // 原来只匹配 "already has an active writer"，于是这类线程连只读历史都打不开，
 // 界面只剩「无法加载会话」加一句英文原文。
 //
-// 只读路径（thread/read includeTurns:false + thread/turns/list）在 codex-host
-// 侧走 resolve → #restore，对齐的是仓库里最新读出的 record，不经过会失败的
-// refresh，所以能拿到历史。只读也失败时再抛原始错误——「线程真的不存在」
-// 「连接断了」这类失败不该被伪装成只读成功。
+// 只读路径（thread/read includeTurns:false + thread/turns/list）**并不能**绕过
+// 上面那个 refresh：#listExternalHistory 在首页请求上会再刷一次，所以上游那个
+// bug 没修之前，这里只是把硬失败降级成「能打开、但可能没有历史」，不会真的拿到
+// turns。真正的修复在 codex-host 侧（refresh 改为按仓库里的 record 对齐，见
+// codex-host commit「fix(external-thread): refresh against the stored record,
+// not the in-memory copy」）。
+//
+// 只读也失败时再抛原始错误——「线程真的不存在」「连接断了」这类失败不该被伪装成
+// 只读成功。
 
 export function prependUniqueTurns(
   current: AnyRecord[],
