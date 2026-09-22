@@ -75,15 +75,25 @@ describe("npm 自动发布流水线", () => {
     expect(source).not.toContain("NPM_TOKEN");
   });
 
-  it("可信发布要用的工作流名是可调用的那个文件，不是发起调用的那个", () => {
+  it("可信发布要用的工作流名是发起调用的那个文件，不是真正执行发布的那个", () => {
     // npmjs.com 上 Trusted Publisher 的 Workflow filename 必须填
-    // publish-npm.yml。原因是 GitHub 的 OIDC 声明里，即便这个 job 是被
-    // build-android.yml 用 workflow_call 调起来的，job_workflow_ref 指的
-    // 仍然是被调用文件本身。实测：
+    // build-android.yml——「发起调用」的那个文件，而不是真正跑 npm publish
+    // 的 publish-npm.yml。
+    //
+    // 官方文档 trusted-publishers#troubleshooting 原文：
+    //   Some GitHub Actions workflows use `workflow_call` to invoke other
+    //   workflows that run `npm publish`, or use `workflow_dispatch` for
+    //   manual publishing. When this happens, validation checks the calling
+    //   workflow's name instead of the workflow that actually contains the
+    //   publish command, which can cause configuration mismatches.
+    //
+    // 这条极容易搞反：GitHub 的 OIDC 声明里 job_workflow_ref 明明指向被调用的
     //   unlgame/codexhost-mobile/.github/workflows/publish-npm.yml@refs/heads/main
-    // 填成 build-android.yml 的话 npm 匹配不上，会静默退化成匿名发布，
-    // 最后以 E404 PUT .../codexhost-mobile 收场——曾经就这么红过几次。
-    // 所以改名这个文件之前，先去 npm 上把 Trusted Publisher 一起改掉。
+    // 但 npm 校验的不是它。曾经照着 job_workflow_ref 把配置改成 publish-npm.yml，
+    // 结果把本来对的配置改坏了——症状是 oidc.js 静默 return，最后只剩一个
+    // ENEEDAUTH，日志里完全看不出原因。
+    //
+    // 所以：改名 build-android.yml 之前，先去 npm 上把 Trusted Publisher 一起改掉。
     const publishWorkflow = readWorkflow(PUBLISH_WORKFLOW);
 
     expect(publishWorkflow.on?.workflow_call).toBeDefined();
@@ -92,24 +102,39 @@ describe("npm 自动发布流水线", () => {
       "id-token": "write",
     });
 
-    // 真正执行 npm publish 的步骤只能在这个文件里，
-    // 不能挪到 build-android.yml：挪了 OIDC 声明就变了，npm 那边会失配。
-    const buildAndroid = parse(
-      readFileSync(BUILD_WORKFLOW, "utf8"),
-    ) as {
-      jobs?: Record<string, { steps?: Array<{ run?: string }> }>;
+    const buildAndroid = parse(readFileSync(BUILD_WORKFLOW, "utf8")) as {
+      jobs?: Record<
+        string,
+        {
+          uses?: string;
+          permissions?: Record<string, string>;
+          steps?: Array<{ run?: string }>;
+        }
+      >;
     };
-    // 发起调用的那个文件里可以提到 npm publishing（报错信息里就有三处），
-    // 但不能真的去执行 npm publish。
+
+    // 必须真的有一个 job 用 workflow_call 调 publish-npm.yml——npm 那边要填的
+    // 就是这个调用方文件的名字，两者得对得上。
+    const callers = Object.entries(buildAndroid.jobs ?? {}).filter(
+      ([, job]) => job.uses === "./.github/workflows/publish-npm.yml",
+    );
+    expect(
+      callers,
+      "build-android.yml 必须有一个 job 用 workflow_call 调 publish-npm.yml",
+    ).toHaveLength(1);
+
+    // 父工作流也要给 id-token: write，缺了同样换不到 OIDC 令牌。
+    expect(callers[0]?.[1].permissions).toMatchObject({
+      contents: "read",
+      "id-token": "write",
+    });
+
+    // 调用方自己不能执行 npm publish。真挪过去了，「调用方」和「执行方」就是
+    // 同一个文件，这条规则无从谈起，npm 那边的配置会静默失配。
     const executedInCaller = Object.values(buildAndroid.jobs ?? {})
       .flatMap((job) => job.steps ?? [])
       .filter((step) => /\bnpm\s+publish\b/.test(step.run ?? ""));
     expect(executedInCaller).toEqual([]);
-    expect(
-      Object.values(buildAndroid.jobs ?? {})
-        .flatMap((job) => job.steps ?? [])
-        .some((step) => step.run?.includes("publish-npm.yml")),
-    ).toBe(true);
   });
 
   it("setup-node 不带 registry-url，否则可信发布被它写错令牌堵死", () => {
@@ -135,12 +160,22 @@ describe("npm 自动发布流水线", () => {
     //   registry exchange: 404
     //     {"message":"OIDC token exchange error - package not found"}
     // 也就是说这一步只解决「别自己堵死 OIDC」，后面还卡着 npm 注册表
-    // 侧的 Trusted Publisher 没配。那个得登录 npmjs.com 手工配：
+    // 侧的 Trusted Publisher。那个得登录 npmjs.com 手工配：
     //   https://www.npmjs.com/package/codexhost-mobile/access
     // 填 Organizations or users = unlgame、Repository = codexhost-mobile、
-    //   Workflow filename = publish-npm.yml（见下一个测试，不能填 build-android.yml）
-    // 没配就让 exchange 直接 404，oidc.js 静默 return，症状只有
+    //   Workflow filename = build-android.yml（见上一个测试，不能填 publish-npm.yml）
+    // 没配对就让 exchange 直接 404，oidc.js 静默 return，症状只有
     // ENEEDAUTH——凭日志看不出来，所以别再把这类静默失败当成本仓库 bug 查。
+    //
+    // exchange 的两个失败码可以区分（2026-09-22 实测，手工 POST 该端点）：
+    //   401 {"message":"OIDC token exchange error - unauthorized"}
+    //       → 令牌本身不合法，问题在 GitHub 侧
+    //   404 {"message":"OIDC token exchange error - package not found"}
+    //       → 令牌合法，但注册表里没有一条能匹配上它的可信发布配置
+    // 看到 404 就去查配置，别去查 GitHub 权限。
+    //
+    // 另一条官方硬要求：package.json 的 repository.url 必须精确等于
+    // GitHub 仓库地址（见下面那条测试），仓库改名后忘了同步它同样发不出去。
     // 反面教材同样是长期密钥：把 NODE_AUTH_TOKEN 接回来「修好」它是偷懒解法。
     const workflow = readWorkflow(PUBLISH_WORKFLOW);
     const steps = workflow.jobs?.publish?.steps ?? [];
@@ -180,7 +215,7 @@ describe("npm 自动发布流水线", () => {
   it("别让人把 npm 发布改回用长期 NPM_TOKEN 顶上", () => {
     // ENEEDAUTH 看着像一个凭据问题，很容易顺手指「加个 NPM_TOKEN 就好了」。
     // 那条路和这次排查的初衷是拧着的：要的就是仓库里不落长期密钥。
-    // 真要让发布跑起来，是去 npmjs.com 配 Trusted Publisher（见上一个测试），
+    // 真要让发布跑起来，是去 npmjs.com 配 Trusted Publisher（见上面两条测试），
     // 不是往仓库塞一个还得手改的 secret。
     const source = readFileSync(PUBLISH_WORKFLOW, "utf8");
     const workflow = readWorkflow(PUBLISH_WORKFLOW);
@@ -194,5 +229,25 @@ describe("npm 自动发布流水线", () => {
       expect(step.env ?? {}).not.toHaveProperty("NPM_TOKEN");
     }
     expect(source).not.toMatch(/secrets\./);
+  });
+
+  it("package.json 的 repository.url 必须指向这个 GitHub 仓库", () => {
+    // 官方文档 trusted-publishers 的另一条硬要求：
+    //   To publish from GitHub, your package's `repository.url` field in
+    //   `package.json` must exactly match your GitHub repository.
+    // 仓库从 loock-ai/codex-mobile 改名到 unlgame/codexhost-mobile 之后，
+    // 这里忘了同步就会静默发不出去，症状同样是只剩一个 ENEEDAUTH。
+    //
+    // 不钉死写法（git+ / .git 后缀都合法），只要求指向同一个仓库，
+    // 这样既拦得住改名遗漏，也不会因为换个等价写法就误报。
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
+      name?: string;
+      repository?: { url?: string };
+    };
+
+    expect(pkg.name).toBe("codexhost-mobile");
+    expect(pkg.repository?.url).toMatch(
+      /^(git\+)?https:\/\/github\.com\/unlgame\/codexhost-mobile(\.git)?$/,
+    );
   });
 });
