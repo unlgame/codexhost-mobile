@@ -25,13 +25,42 @@
 
 ## 快速开始
 
-### 1. Windows 前置条件
+### 1. Windows 侧准备
 
-- Windows 主机上**正在运行 codex-host**（`AppServerHost` 已就绪，命名管道可连接）。
-- 同一台 Windows 主机上已启动本仓库的网关。
-- 手机与 Windows 主机处于同一网络，且防火墙放行了网关监听端口。
+Windows 主机上必须**正在运行 codex-host**（`AppServerHost` 已就绪、命名管道可连接）。
+codex-host 没运行时，小桥读不到它发布的管道描述文件，网关启动阶段就会报上游不可用。
 
-如果 codex-host 没有在运行，网关无法转发请求，App 会显示主机不可用。
+然后装网关、生成配置、启动：
+
+```bash
+npm install -g codexhost-mobile
+
+codexhost-mobile config --init   # 生成配置：0.0.0.0 + 随机访问口令 + codexhost 模式
+codexhost-mobile start           # 启动网关
+```
+
+`config --init` 写出的 `%USERPROFILE%\.codex-mobile\config.json` 就是一份可用配置：
+
+```json
+{ "host": "0.0.0.0", "port": 18766, "token": "<随机口令>", "mode": "codexhost" }
+```
+
+四个字段都是有意的，缺一不可：
+
+| 字段 | 为什么必须是这个值 |
+| --- | --- |
+| `host: "0.0.0.0"` | 默认的 `127.0.0.1` 只监听回环，手机根本连不上 |
+| `mode: "codexhost"` | 默认的 `managed` 会让网关**另起一个自己的 app-server**，你看到的不是 codex-host 里的会话 |
+| `token` | 非回环监听没有口令时网关会直接拒绝启动 |
+| `port: 18766` | 手机端要填的就是这个端口，可用 `--port` 临时改 |
+
+首次 `start` 时 Windows 会弹出防火墙对话框，要**允许专用网络**入站，否则手机连不上。
+也可以用管理员 PowerShell 手动放行：
+
+```powershell
+New-NetFirewallRule -DisplayName "codexhost-mobile" -Direction Inbound `
+  -Protocol TCP -LocalPort 18766 -Action Allow -Profile Private
+```
 
 ### 2. 下载并安装客户端
 
@@ -59,14 +88,24 @@ codexhost-mobile start
 
 ### 3. 首次配置
 
+网关启动后，在 Windows 上打印配对二维码：
 
-打开 App，进入「设备设置」，**手动填写** Windows 网关的完整地址（形如
-`http://<Windows-主机地址>:<网关端口>/?token=<访问口令>`，具体值由你启动网关时决定）。
+```bash
+codexhost-mobile auth            # 打印二维码（读取正在运行的网关的实际端口与口令）
+codexhost-mobile auth --plain    # 只打印 URL，不画二维码
+```
+
+打开 App，进入「设备设置」，点扫码按钮对着终端里的二维码扫一下即可——地址与访问口令
+会自动填好。二维码内容就是一行 `http://<局域网IP>:<网关端口>/?token=<访问口令>`，
+不含其他信息。
+
+扫不了也可以**手动填写**同一个地址（`auth --plain` 打印的就是它）。
 
 保存后 App 会自动探测 `/api/host`，完成一次握手验证，成功后即可在会话列表中看到
 该主机的项目与会话。地址与访问口令只保存在手机本地存储中，不会提交到本仓库。
 
-> 本客户端**不使用二维码配对**，避免把网关地址和访问口令暴露给摄像头、截图和日志。
+> `auth` 依赖正在运行的网关写下的运行时信息；网关没启动时它会退回读环境变量，
+> 端口和口令可能对不上，所以先 `start` 再 `auth`。
 
 ---
 
