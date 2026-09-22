@@ -41,6 +41,8 @@ interface DownstreamClient {
 interface PendingRequest {
   client: DownstreamClient;
   originalId: unknown;
+  /** 请求方法。thread/start 的订阅只能在响应里补登记，需要它来判别。 */
+  method: string;
 }
 
 const DESCRIPTOR_DIRECTORY = "codexhost";
@@ -53,6 +55,9 @@ const THREAD_SUBSCRIPTION_METHODS = new Set([
   "thread/resume",
   "thread/read",
   "thread/items/list",
+  // 改名要登记：否则改名后的 thread/name/updated 会走广播兜底，
+  // 多台设备同时连时投给一堆无关客户端。
+  "thread/name/set",
 ]);
 const MAX_QUEUED_UPSTREAM_FRAMES = 512;
 const MAX_QUEUED_UPSTREAM_BYTES = 8 * 1024 * 1024;
@@ -238,6 +243,17 @@ export async function startCodexHostBridge(
     }
   };
 
+  const registerThreadSubscription = (
+    client: DownstreamClient,
+    threadId: string,
+  ): void => {
+    if (client.threads.has(threadId)) return;
+    client.threads.add(threadId);
+    const subscribers = subscriptions.get(threadId) ?? new Set<DownstreamClient>();
+    subscribers.add(client);
+    subscriptions.set(threadId, subscribers);
+  };
+
   const trackThreadActivity = (
     client: DownstreamClient,
     message: Record<string, unknown>,
@@ -245,12 +261,7 @@ export async function startCodexHostBridge(
     const threadId = extractThreadId(message);
     if (!threadId) return;
     if (typeof message.method === "string" && THREAD_SUBSCRIPTION_METHODS.has(message.method)) {
-      if (!client.threads.has(threadId)) {
-        client.threads.add(threadId);
-        const subscribers = subscriptions.get(threadId) ?? new Set<DownstreamClient>();
-        subscribers.add(client);
-        subscriptions.set(threadId, subscribers);
-      }
+      registerThreadSubscription(client, threadId);
     }
   };
 
@@ -334,6 +345,18 @@ export async function startCodexHostBridge(
       const entry = pending.get(rewrittenId);
       if (entry) {
         pending.delete(rewrittenId);
+        // thread/start 的请求参数里没有 threadId（线程此刻还不存在），所以这条
+        // 线程的订阅只能从响应里补登记。漏了它，新建线程的后续通知就只剩广播
+        // 兜底，多台设备同时连时会把无关帧投给所有客户端。
+        if (entry.method === "thread/start") {
+          const created = (parsed.result as Record<string, unknown> | undefined)
+            ?.thread;
+          const createdId =
+            isRecord(created) && typeof created.id === "string"
+              ? created.id
+              : null;
+          if (createdId) registerThreadSubscription(entry.client, createdId);
+        }
         deliver(entry.client, JSON.stringify({ ...parsed, id: entry.originalId }));
         return;
       }
@@ -426,11 +449,10 @@ export async function startCodexHostBridge(
       return;
     }
     const hasId = "id" in parsed;
-    const isRequest = typeof parsed.method === "string";
-    if (hasId && isRequest) {
+    if (hasId && typeof parsed.method === "string") {
       const originalId = parsed.id;
       const rewrittenId = `${client.id}:${String(originalId)}`;
-      pending.set(rewrittenId, { client, originalId });
+      pending.set(rewrittenId, { client, originalId, method: parsed.method });
       trackThreadActivity(client, parsed);
       sendUpstream(JSON.stringify({ ...parsed, id: rewrittenId }), false);
       return;

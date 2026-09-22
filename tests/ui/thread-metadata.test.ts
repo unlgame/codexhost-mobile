@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   activeThreadAfterArchive,
+  firstMessageTitle,
+  setThreadNameFromFirstMessage,
   setThreadPinned,
 } from "../../src/app-server/thread-metadata";
 
@@ -35,5 +37,40 @@ describe("线程元数据", () => {
       newerThread,
     );
     expect(activeThreadAfterArchive(newerThread, "thread-2")).toBeNull();
+  });
+
+  it("首段文本压成单行标题并按长度截断", () => {
+    expect(firstMessageTitle("  帮我   修一下\n这个  bug  ")).toBe(
+      "帮我 修一下 这个 bug",
+    );
+
+    const title = firstMessageTitle("甲".repeat(200));
+    expect(title.endsWith("…")).toBe(true);
+    expect(title.length).toBe(80);
+  });
+
+  it("把首段用户消息写成会话名", async () => {
+    const request = vi.fn(async () => ({}));
+
+    await expect(
+      setThreadNameFromFirstMessage(
+        { request } as any,
+        "thread-1",
+        "  第一条消息  ",
+      ),
+    ).resolves.toBe("第一条消息");
+    expect(request).toHaveBeenCalledWith("thread/name/set", {
+      threadId: "thread-1",
+      name: "第一条消息",
+    });
+  });
+
+  it("空白消息不调用 thread/name/set（上游拒绝空串）", async () => {
+    const request = vi.fn(async () => ({}));
+
+    await expect(
+      setThreadNameFromFirstMessage({ request } as any, "thread-1", "   \n  "),
+    ).resolves.toBeNull();
+    expect(request).not.toHaveBeenCalled();
   });
 });

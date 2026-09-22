@@ -266,9 +266,15 @@ describe("悬浮状态布局", () => {
     expect(styles).not.toContain(
       "@media (min-width: 721px) { :root { --browser-edge-top: 0px; --browser-edge-bottom: 0px; } }",
     );
-    expect(listActionsRule).toContain("inset: auto 0 var(--browser-edge-bottom)");
+    // 底部悬浮元素都要带上 --keyboard-inset：键盘弹出时 layout viewport
+    // 可能不变（edge-to-edge 容器），光靠 --browser-edge-bottom 会落在键盘下面。
+    expect(listActionsRule).toContain(
+      "inset: auto 0 calc(var(--browser-edge-bottom) + var(--keyboard-inset, 0px))",
+    );
     expect(listActionsRule).toContain("padding: 8px 16px 0");
-    expect(composerRule).toContain("bottom: var(--browser-edge-bottom)");
+    expect(composerRule).toContain(
+      "bottom: calc(var(--browser-edge-bottom) + var(--keyboard-inset, 0px))",
+    );
     expect(composerRule).toContain("padding: 8px 22px 0");
   });
 

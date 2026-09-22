@@ -467,7 +467,12 @@ export function ConversationPage({
             role="status"
             title={resumeError}
           >
-            <span>{t("该会话正在其他 Codex 客户端运行，当前为只读模式")}</span>
+            <span>
+              {t("当前无法接管该会话，只能查看历史（只读）")}
+              {resumeError ? (
+                <em className="readonly-thread-reason">{resumeError}</em>
+              ) : null}
+            </span>
             <button type="button" onClick={onRetry}>
               {t("重新连接")}
             </button>

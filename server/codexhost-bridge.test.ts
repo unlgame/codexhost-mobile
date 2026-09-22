@@ -311,6 +311,60 @@ describe("codexhost 小桥多路复用", () => {
     expect(JSON.parse(framesB[0]).method).toBe("server/notice");
   });
 
+  it("thread/start 参数里没有 threadId，订阅从响应里的 thread.id 补登记", async () => {
+    // 真实的 thread/start 参数里没有 threadId——线程此刻还不存在——所以只靠
+    // 请求参数永远登记不上订阅。漏了这一步，新建线程的后续通知就只剩广播
+    // 兜底，多台设备同时连时会把无关帧投给所有客户端。
+    const fakeHost = await startFakeHost();
+    cleanups.push(() => fakeHost.close());
+    const directory = await createDescriptorDirectory();
+    const descriptorPath = await writeDescriptor(directory, {
+      schemaVersion: 1,
+      ownerPid: process.pid,
+      pipePath: `${PIPE_PREFIX}session-start`,
+    });
+    const bridge = await startBridge(descriptorPath, fakeHost);
+
+    const clientA = await connectDownstream(bridge.port);
+    const clientB = await connectDownstream(bridge.port);
+    const hostSocket = await fakeHost.hostSocket;
+    const hostFrames: string[] = [];
+    hostSocket.on("message", (data) => hostFrames.push(data.toString()));
+    const framesA = record(clientA);
+    const framesB = record(clientB);
+
+    clientA.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "a-1",
+        method: "thread/start",
+        params: { cwd: "C:/work" },
+      }),
+    );
+    await waitFor(() => hostFrames.length === 1);
+    const startFrame = JSON.parse(hostFrames[0]);
+    hostSocket.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: startFrame.id,
+        result: { thread: { id: "thread-new" } },
+      }),
+    );
+    await waitFor(() => framesA.length === 1);
+    expect(JSON.parse(framesA[0]).id).toBe("a-1");
+
+    hostSocket.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "thread/name/updated",
+        params: { threadId: "thread-new", threadName: "新名字" },
+      }),
+    );
+    await waitFor(() => framesA.length === 2);
+    expect(JSON.parse(framesA[1]).params.threadName).toBe("新名字");
+    expect(framesB).toEqual([]);
+  });
+
   it("Host 主动请求路由到线程操作方，响应原样带回", async () => {
     const fakeHost = await startFakeHost();
     cleanups.push(() => fakeHost.close());

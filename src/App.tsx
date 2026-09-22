@@ -42,6 +42,8 @@ import {
 } from "./app-server/turn-steering";
 import {
   activeThreadAfterArchive,
+  firstMessageTitle,
+  setThreadNameFromFirstMessage,
   setThreadPinned,
 } from "./app-server/thread-metadata";
 import {
@@ -570,6 +572,51 @@ function BackendWorkspace({
               (activeThreadTargetRef.current ?? activeRef.current?.id)
           ) {
             threadNotificationSequenceRef.current += 1;
+          }
+          // 列表级通知。之前一个都没处理，于是别处（桌面端）新建、改名、归档的
+          // 会话都不会反映到手机上，只能靠手动刷新或下一次 turn/completed 顺带
+          // 重载。小桥在没有订阅者时是广播的，所以这些帧本来就会到手机，只是
+          // 被丢掉了。
+          if (message.method === "thread/started" && params.thread) {
+            const started = params.thread as AnyRecord;
+            if (typeof started.id === "string") {
+              setThreads((current) =>
+                current.some((entry) => entry.id === started.id)
+                  ? current
+                  : [started, ...current],
+              );
+            }
+          }
+          if (message.method === "thread/name/updated" && params.threadId) {
+            // threadName 允许为 null（清空名字），此时退回 preview 兜底。
+            const name =
+              typeof params.threadName === "string" ? params.threadName : "";
+            setThreads((current) =>
+              current.map((entry) =>
+                entry.id === params.threadId ? { ...entry, name } : entry,
+              ),
+            );
+            setActive((current) =>
+              current && current.id === params.threadId
+                ? { ...current, name }
+                : current,
+            );
+          }
+          if (
+            (message.method === "thread/archived" ||
+              message.method === "thread/deleted") &&
+            params.threadId
+          ) {
+            setThreads((current) =>
+              current.filter((entry) => entry.id !== params.threadId),
+            );
+            setActive((current) =>
+              activeThreadAfterArchive(current, params.threadId),
+            );
+          }
+          if (message.method === "thread/unarchived" && params.threadId) {
+            // 取消归档会把线程重新放回列表，重拉一次比本地拼一条更稳。
+            void loadThreads(client).catch(() => undefined);
           }
           if (message.method === "turn/started" && params.turn) {
             if (params.threadId) {
@@ -1267,6 +1314,8 @@ function BackendWorkspace({
     const pendingTurnId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let thread = active;
     let sent = false;
+    // 这条消息会不会开出一条新线程——决定要不要用首段文本给它命名。
+    const startedNewThread = !thread?.id;
     try {
       setImageReading(Boolean(pendingFiles.length));
       const uploadedFiles = await Promise.all(
@@ -1305,7 +1354,13 @@ function BackendWorkspace({
         thread = started.thread;
         activeThreadTargetRef.current = thread.id;
         setThreads((current) => [
-          { ...thread!, status: { type: "active" } },
+          // 先本地填上 preview，侧边栏立刻显示首段文本而不是「新对话」；
+          // 真正的 name 由下面的 thread/name/set 落库（见其注释）。
+          {
+            ...thread!,
+            preview: firstMessageTitle(text),
+            status: { type: "active" },
+          },
           ...current.filter((entry) => entry.id !== thread!.id),
         ]);
         const startedModel = started.model || selectedModel;
@@ -1377,6 +1432,28 @@ function BackendWorkspace({
           : {}),
       });
       sent = true;
+      if (startedNewThread) {
+        // 首段文本写进 name：侧边栏读 thread/list（外部 harness 线程那里
+        // preview 恒为空串）、标题栏读 thread/resume，同一个 titleOf 于是有两个
+        // 结果。写进 name 才能让三处一致，codexhost 自己的列表也跟着对
+        // （详见 thread-metadata.ts 的说明）。
+        // 命名失败不影响消息本身，所以静默忽略。
+        void setThreadNameFromFirstMessage(clientRef.current, thread.id, text)
+          .then((name) => {
+            if (!name) return;
+            setThreads((current) =>
+              current.map((entry) =>
+                entry.id === thread!.id ? { ...entry, name } : entry,
+              ),
+            );
+            setActive((current) =>
+              current && current.id === thread!.id
+                ? { ...current, name }
+                : current,
+            );
+          })
+          .catch(() => undefined);
+      }
       if (draftContext === draftContextGenerationRef.current) {
         setActive((current) => {
           if (!current) return current;

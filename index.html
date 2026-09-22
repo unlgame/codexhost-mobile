@@ -2,9 +2,16 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      interactive-widget=resizes-content：让软键盘真正压缩 layout viewport。
+      Chrome 默认是 resizes-visual——只有 visual viewport 缩，100dvh 不缩，
+      于是底部 fixed 的输入框落在键盘下面，WebView 只好把整个页面平移，
+      标题栏和侧边栏按钮就被顶出屏幕。src/ui/viewport-insets.ts 里有兜底补偿，
+      但在认这个关键字的容器上，这里一改就够。
+    -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#ffffff" />
     <title>Codex Remote</title>

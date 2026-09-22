@@ -159,9 +159,12 @@ describe("会话详情历史分页", () => {
     );
     const view = within(container);
 
+    // 只读的成因不止「别的客户端在跑」（外部线程历史无法持久化也会降级到
+    // 只读），所以提示语用中性说法，并把上游原文一并显示出来。
     expect(
-      view.getByText("该会话正在其他 Codex 客户端运行，当前为只读模式"),
+      view.getByText("当前无法接管该会话，只能查看历史（只读）"),
     ).not.toBeNull();
+    expect(view.getByText("thread already has an active writer")).not.toBeNull();
     expect(view.getByLabelText("向 Codex 提问").hasAttribute("disabled")).toBe(
       true,
     );

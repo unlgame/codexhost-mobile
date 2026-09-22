@@ -96,16 +96,44 @@ describe("恢复已有 app-server 会话", () => {
     });
   });
 
-  it("resume 的非 writer 错误保留原始原因且不读取历史", async () => {
+  it("resume 报外部线程历史错误时也降级只读，历史仍能打开", async () => {
+    // 上游 refresh() 把 alignSnapshot 的所有异常压成同一句 -32081
+    // "External Thread history could not be persisted"，所以不能靠匹配文案
+    // 决定该不该降级。只读路径在 codex-host 侧走的是 resolve → #restore，
+    // 对齐的是仓库里最新读出的 record，能绕过会失败的那个 refresh。
     const request = vi
       .fn()
-      .mockRejectedValueOnce(new Error("app-server connection closed"));
+      .mockRejectedValueOnce(
+        new Error("External Thread history could not be persisted"),
+      )
+      .mockResolvedValueOnce({
+        thread: { id: "thread-1", title: "External thread" },
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: "turn-2" }, { id: "turn-1" }],
+        nextCursor: null,
+      });
+
+    const result = await resumeThreadSession({ request }, "thread-1");
+
+    expect(result.accessMode).toBe("readOnly");
+    expect(result.resumeError).toContain("External Thread history");
+    expect(result.thread.turns.map((turn: { id: string }) => turn.id)).toEqual([
+      "turn-1",
+      "turn-2",
+    ]);
+  });
+
+  it("只读降级也失败时抛原始 resume 错误，不伪装成只读成功", async () => {
+    // 「线程真的不存在」「连接已断」这类失败不该被降级掩盖成只读模式。
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("app-server connection closed"))
+      .mockRejectedValueOnce(new Error("still closed"));
 
     await expect(
       resumeThreadSession({ request }, "thread-1"),
     ).rejects.toThrow("app-server connection closed");
-
-    expect(request).toHaveBeenCalledOnce();
   });
 
   it("使用游标获取更早 turns 并转换为时间正序", async () => {
