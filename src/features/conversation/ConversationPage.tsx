@@ -19,6 +19,7 @@ import {
 import { effortLabel } from "../../ui/settings";
 import { groupConversationTurns } from "../../ui/conversation";
 import { ErrorBanner } from "../../ui/ErrorBanner";
+import { ActionSheet } from "../../ui/ActionSheet";
 import { TurnCard } from "./Timeline";
 import {
   ConversationActionMenu,
@@ -215,6 +216,10 @@ export function ConversationPage({
   const [statusOpen, setStatusOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  /** 新会话界面的「项目 / 机器」选择器：用自己的 sheet，不用原生 select。 */
+  const [targetSheet, setTargetSheet] = useState<"project" | "backend" | null>(
+    null,
+  );
   const turns = groupConversationTurns(active.turns ?? []);
   const isNewChat = !active.id;
   const hasDraft = Boolean(draft.trim() || draftImages.length || draftFiles.length);
@@ -346,6 +351,63 @@ export function ConversationPage({
           });
         }}
       />
+      <ActionSheet
+        open={targetSheet === "project"}
+        title={t("选择项目")}
+        ariaLabel={t("选择项目")}
+        onClose={() => setTargetSheet(null)}
+      >
+        <div className="popover-options" aria-label={t("项目列表")}>
+          {projectOptions.map((project) => {
+            const selected = project.cwd === active.cwd;
+            return (
+              <button
+                key={project.cwd}
+                className={selected ? "selected" : ""}
+                aria-pressed={selected}
+                onClick={() => {
+                  onNewChatProjectChange(project.cwd);
+                  setTargetSheet(null);
+                }}
+              >
+                <span>
+                  <strong>{project.name}</strong>
+                  <small>{project.cwd}</small>
+                </span>
+                <i>{selected ? "✓" : ""}</i>
+              </button>
+            );
+          })}
+        </div>
+      </ActionSheet>
+      <ActionSheet
+        open={targetSheet === "backend"}
+        title={t("选择机器")}
+        ariaLabel={t("选择机器")}
+        onClose={() => setTargetSheet(null)}
+      >
+        <div className="popover-options" aria-label={t("机器列表")}>
+          {backends.map((backend) => {
+            const selected = backend.id === backendId;
+            return (
+              <button
+                key={backend.id}
+                className={selected ? "selected" : ""}
+                aria-pressed={selected}
+                onClick={() => {
+                  onNewChatBackendChange(backend.id);
+                  setTargetSheet(null);
+                }}
+              >
+                <span>
+                  <strong>{backend.name}</strong>
+                </span>
+                <i>{selected ? "✓" : ""}</i>
+              </button>
+            );
+          })}
+        </div>
+      </ActionSheet>
       <div
         className="conversation-scroll"
         ref={scrollRef}
@@ -355,7 +417,13 @@ export function ConversationPage({
           {isNewChat && (
             <section className="new-chat-targets" aria-label={t("新聊天目标")}>
               <h2>{t("开始处理")}</h2>
-              <label>
+              <button
+                type="button"
+                className="target-row"
+                aria-label={t("选择项目")}
+                disabled={!projectOptions.length}
+                onClick={() => setTargetSheet("project")}
+              >
                 <AppIcon name="folder" />
                 <span>
                   <small>{t("项目")}</small>
@@ -365,44 +433,20 @@ export function ConversationPage({
                     )?.name ?? t("请选择项目")}
                   </strong>
                 </span>
-                <select
-                  aria-label={t("选择项目")}
-                  value={active.cwd ?? ""}
-                  disabled={!projectOptions.length}
-                  onChange={(event) =>
-                    onNewChatProjectChange(event.currentTarget.value)
-                  }
-                >
-                  {!projectOptions.length && (
-                    <option value="">{t("没有可用项目")}</option>
-                  )}
-                  {projectOptions.map((project) => (
-                    <option value={project.cwd} key={project.cwd}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
+              </button>
+              <button
+                type="button"
+                className="target-row"
+                aria-label={t("选择机器")}
+                disabled={!backends.length}
+                onClick={() => setTargetSheet("backend")}
+              >
                 <span className="device-glyph" aria-hidden="true">▰</span>
                 <span>
                   <small>{t("机器")}</small>
                   <strong>{backendName}</strong>
                 </span>
-                <select
-                  aria-label={t("选择机器")}
-                  value={backendId}
-                  onChange={(event) =>
-                    onNewChatBackendChange(event.currentTarget.value)
-                  }
-                >
-                  {backends.map((backend) => (
-                    <option value={backend.id} key={backend.id}>
-                      {backend.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              </button>
               {!projectOptions.length && (
                 <p role="alert">{t("没有可用项目，暂时无法启动新聊天。")}</p>
               )}

@@ -1,9 +1,4 @@
-import { Chevron } from "../../ui/icons";
 import { t } from "../../i18n";
-import {
-  thinkingOptionsForModel,
-  type HarnessInspection,
-} from "../../app-server/harness-inspect";
 
 export interface HarnessPluginOption {
   id: string;
@@ -11,166 +6,68 @@ export interface HarnessPluginOption {
 }
 
 /**
- * 外部 Harness 选择器。
+ * 官方 Codex 在列表里的 id。
  *
- * 与官方模型选择器**分开**，因为 codex-host 的约束就是这样：harness 只在
- * `thread/start` 时绑定，会话中换 harness 会被 -32602 拒绝。所以这个面板只在
- * 「尚未创建线程」时可用，选中之后整条链路的 model 都是那个 harness 的模型，
- * 与官方 model picker 是互斥的两条路。
+ * codex-host 把 `codex` 当作保留 id（`encodeHarnessRoute` 会拒绝它），所以
+ * 「官方 Codex」**不是**一个 harnessId=codex 的路由，而是「不发路由」——
+ * 也就是 thread/start 里带普通官方 model 的那条路。
+ */
+export const OFFICIAL_HARNESS_ID = "codex";
+
+/**
+ * 选择「用哪个 harness」。只做这一件事。
+ *
+ * 模型与思考档位统一由中间那个「智能」下拉框负责，并且跟着这里的选择变
+ * （见 ComposerSettings）。之前把模型塞在这个面板里是错的：选了外部 harness
+ * 之后中间那个模型框仍然只有官方模型，用户无法确定最终用的是什么模型，也
+ * 退不回官方 Codex。
  */
 export function HarnessPicker({
   plugins,
   selectedHarnessId,
-  harnessName,
-  inspection,
   inspectError,
-  selectedModelId,
-  selectedThinkingId,
-  selectedPermissionModeId,
   onChooseHarness,
-  onChooseModel,
-  onChooseThinking,
-  onChoosePermissionMode,
-  onBackToHarnessList,
 }: {
   plugins: HarnessPluginOption[];
+  /** null 表示官方 Codex。 */
   selectedHarnessId: string | null;
-  harnessName: string;
-  inspection: HarnessInspection | null;
   inspectError: string;
-  selectedModelId: string | null;
-  selectedThinkingId: string | null;
-  selectedPermissionModeId: string | null;
-  onChooseHarness: (harnessId: string) => void;
-  onChooseModel: (modelId: string) => void;
-  onChooseThinking: (thinkingOptionId: string) => void;
-  onChoosePermissionMode: (permissionModeId: string) => void;
-  onBackToHarnessList: () => void;
+  onChooseHarness: (harnessId: string | null) => void;
 }) {
-  if (!selectedHarnessId) {
-    return (
-      <>
-        <div className="popover-eyebrow">{t("外部 Harness")}</div>
-        {plugins.length === 0 ? (
-          <div className="popover-empty">{t("没有可用的外部 Harness")}</div>
-        ) : (
-          <div className="popover-options" aria-label={t("外部 Harness 列表")}>
-            {plugins.map((plugin) => (
-              <button key={plugin.id} onClick={() => onChooseHarness(plugin.id)}>
-                <span>
-                  <strong>{plugin.name}</strong>
-                  <small>{plugin.id}</small>
-                </span>
-                <Chevron />
-              </button>
-            ))}
-          </div>
-        )}
-      </>
-    );
-  }
-
-  const ready = inspection?.status === "ready";
-  const models = inspection?.models ?? [];
-  const thinkingOptions = inspection
-    ? thinkingOptionsForModel(inspection, selectedModelId ?? undefined)
-    : [];
-  const permissionModes = inspection?.permissionModes ?? [];
+  const entries = [
+    { id: OFFICIAL_HARNESS_ID, name: t("官方 Codex"), official: true },
+    ...plugins.map((plugin) => ({
+      id: plugin.id,
+      name: plugin.name,
+      official: false,
+    })),
+  ];
 
   return (
     <>
-      <button className="popover-title" onClick={onBackToHarnessList}>
-        <span>
-          <strong>{harnessName}</strong>
-          <small>{t("更换 Harness")}</small>
-        </span>
-        <Chevron direction="down" />
-      </button>
-      <div className="popover-divider" />
+      <div className="popover-eyebrow">{t("Harness")}</div>
+      <div className="popover-options" aria-label={t("Harness 列表")}>
+        {entries.map((entry) => {
+          const selected = entry.official
+            ? !selectedHarnessId
+            : entry.id === selectedHarnessId;
+          return (
+            <button
+              key={entry.id}
+              className={selected ? "selected" : ""}
+              aria-pressed={selected}
+              onClick={() => onChooseHarness(entry.official ? null : entry.id)}
+            >
+              <span>
+                <strong>{entry.name}</strong>
+                {!entry.official && <small>{entry.id}</small>}
+              </span>
+              <i>{selected ? "✓" : ""}</i>
+            </button>
+          );
+        })}
+      </div>
       {inspectError && <div className="popover-empty">{inspectError}</div>}
-      {!inspectError && inspection && !ready && (
-        <div className="popover-empty">
-          {inspection.errorMessage || t("该 Harness 当前不可用")}
-        </div>
-      )}
-      {!inspectError && ready && (
-        <>
-          {inspection!.capabilities.selectModel && models.length > 0 && (
-            <>
-              <div className="popover-eyebrow">{t("模型")}</div>
-              <div className="popover-options" aria-label={t("Harness 模型列表")}>
-                {models.map((model) => {
-                  const selected = model.id === selectedModelId;
-                  return (
-                    <button
-                      key={model.id}
-                      className={selected ? "selected" : ""}
-                      aria-pressed={selected}
-                      onClick={() => onChooseModel(model.id)}
-                    >
-                      <span>
-                        <strong>{model.label}</strong>
-                      </span>
-                      <i>{selected ? "✓" : ""}</i>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          {inspection!.capabilities.selectThinkingOption &&
-            thinkingOptions.length > 0 && (
-              <>
-                <div className="popover-divider" />
-                <div className="popover-eyebrow">{t("思考档位")}</div>
-                <div className="popover-options" aria-label={t("思考档位列表")}>
-                  {thinkingOptions.map((option) => {
-                    const selected = option.id === selectedThinkingId;
-                    return (
-                      <button
-                        key={option.id}
-                        className={selected ? "selected" : ""}
-                        aria-pressed={selected}
-                        onClick={() => onChooseThinking(option.id)}
-                      >
-                        <span>
-                          <strong>{option.label}</strong>
-                        </span>
-                        <i>{selected ? "✓" : ""}</i>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          {inspection!.capabilities.selectPermissionMode &&
-            permissionModes.length > 0 && (
-              <>
-                <div className="popover-divider" />
-                <div className="popover-eyebrow">{t("权限模式")}</div>
-                <div className="popover-options" aria-label={t("Harness 权限模式列表")}>
-                  {permissionModes.map((mode) => {
-                    const selected = mode.id === selectedPermissionModeId;
-                    return (
-                      <button
-                        key={mode.id}
-                        className={selected ? "selected" : ""}
-                        aria-pressed={selected}
-                        onClick={() => onChoosePermissionMode(mode.id)}
-                      >
-                        <span>
-                          <strong>{mode.label}</strong>
-                          {mode.description && <small>{mode.description}</small>}
-                        </span>
-                        <i>{selected ? "✓" : ""}</i>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-        </>
-      )}
     </>
   );
 }

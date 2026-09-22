@@ -1761,6 +1761,23 @@ function BackendWorkspace({
         selectedModel ||
         t("默认模型");
   const effortOptions = effortOptionsForModel(selectedModelEntry);
+  // 选中外部 harness 时，中间那个 chip 显示的是「harness · 模型 思考档位」——
+  // 模型与思考档位都在那个下拉框里选（harness picker 只负责选 harness）。
+  const harnessModelLabel =
+    harnessInspection?.models.find((model) => model.id === selectedHarnessModelId)
+      ?.label ?? "";
+  const harnessThinkingLabel =
+    harnessInspection?.thinkingOptions.find(
+      (option) => option.id === selectedHarnessThinkingId,
+    )?.label ?? "";
+  const agentChipModelLabel = selectedHarnessId
+    ? [harnessPluginName(selectedHarnessId), harnessModelLabel]
+        .filter(Boolean)
+        .join(" · ")
+    : selectedModelLabel;
+  const agentChipEffort = selectedHarnessId
+    ? harnessThinkingLabel || t("默认模型")
+    : selectedEffort;
   const speedOptions = speedOptionsForModel(selectedModelEntry);
   const selectedSpeedLabel =
     speedOptions.find((option) => option.id === selectedServiceTier)?.label ??
@@ -1810,44 +1827,41 @@ function BackendWorkspace({
     if (!active?.id) setNewChatPermissionMode(mode);
     setPicker(null);
   };
-  const chooseHarness = (harnessId: string) => {
-    setSelectedHarnessId(harnessId);
+  /**
+   * harnessId 为 null 表示切回官方 Codex：清空选择即可。
+   *
+   * codex-host 把 `codex` 当保留 id（encodeHarnessRoute 会拒绝它），所以官方
+   * 那条路**不发任何路由**，thread/start 带普通官方 model——这也是为什么列表里
+   * 必须有这个选项：没有它，选了外部 harness 就退不回来。
+   */
+  const chooseHarness = (harnessId: string | null) => {
     setHarnessInspection(null);
     setHarnessInspectError("");
+    setSelectedHarnessId(harnessId);
+    if (!harnessId) return;
     const client = clientRef.current;
     if (!client) return;
     void inspectHarness(client, harnessId, active?.cwd ?? null)
       .then((inspection) => {
         setHarnessInspection(inspection);
-        // 用目录里的默认值起手，用户不选也能直接开聊。
-        if (inspection.status === "ready") {
-          setSelectedHarnessModelId(
-            (current) =>
-              current ??
-              inspection.defaultModelId ??
-              inspection.models[0]?.id ??
-              null,
-          );
-          setSelectedHarnessThinkingId(
-            (current) =>
-              current ?? inspection.defaultThinkingOptionId ?? null,
-          );
-          setSelectedHarnessPermissionModeId(
-            (current) =>
-              current ?? inspection.defaultPermissionModeId ?? null,
-          );
-        }
+        if (inspection.status !== "ready") return;
+        // 换 harness 一律重置成新 harness 的默认值——沿用上一个 harness 的
+        // model/thinking id 是没有意义的，而且会被上游拒绝。
+        setSelectedHarnessModelId(
+          inspection.defaultModelId ?? inspection.models[0]?.id ?? null,
+        );
+        setSelectedHarnessThinkingId(
+          inspection.defaultThinkingOptionId ?? null,
+        );
+        setSelectedHarnessPermissionModeId(
+          inspection.defaultPermissionModeId ?? null,
+        );
       })
       .catch((reason) => {
         setHarnessInspectError(
           reason instanceof Error ? reason.message : String(reason),
         );
       });
-  };
-  const backToHarnessList = () => {
-    setSelectedHarnessId(null);
-    setHarnessInspection(null);
-    setHarnessInspectError("");
   };
   // harness 只在 thread/start 时绑定：这个路由字符串就是 thread/start 的 model。
   const harnessRoute = tryEncodeHarnessRoute(
@@ -2057,8 +2071,8 @@ function BackendWorkspace({
           rateLimits={rateLimits}
           pendingAction={pendingAction}
           selectedServiceTier={selectedServiceTier}
-          selectedModelLabel={selectedModelLabel}
-          selectedEffort={selectedEffort}
+          selectedModelLabel={agentChipModelLabel}
+          selectedEffort={agentChipEffort}
           selectedPermissionLabel={selectedPermissionLabel}
           imageInputRef={imageInputRef}
           onBack={onOpenSidebar}
@@ -2147,9 +2161,6 @@ function BackendWorkspace({
         models={models}
         harnessPlugins={harnessPlugins}
         selectedHarnessId={selectedHarnessId}
-        selectedHarnessName={
-          selectedHarnessId ? harnessPluginName(selectedHarnessId) : ""
-        }
         harnessInspection={harnessInspection}
         harnessInspectError={harnessInspectError}
         selectedHarnessModelId={selectedHarnessModelId}
@@ -2170,7 +2181,6 @@ function BackendWorkspace({
         onChooseHarnessModel={setSelectedHarnessModelId}
         onChooseHarnessThinking={setSelectedHarnessThinkingId}
         onChooseHarnessPermissionMode={setSelectedHarnessPermissionModeId}
-        onBackToHarnessList={backToHarnessList}
       />
     </main>
   );

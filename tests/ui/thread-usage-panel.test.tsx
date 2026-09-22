@@ -135,7 +135,7 @@ describe("用量 chip 与展开面板", () => {
   });
 });
 
-describe("外部 Harness 选择器", () => {
+describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   const READY_INSPECTION = {
     status: "ready" as const,
     models: [
@@ -162,40 +162,51 @@ describe("外部 Harness 选择器", () => {
     },
   };
 
+  const OFFICIAL_MODELS = [
+    { id: "gpt-5", model: "gpt-5-codex", displayName: "GPT-5 Codex" },
+  ];
+
   function renderSettings(overrides: Record<string, unknown> = {}) {
     const handlers = {
       onChooseHarness: vi.fn(),
       onChooseHarnessModel: vi.fn(),
       onChooseHarnessThinking: vi.fn(),
       onChooseHarnessPermissionMode: vi.fn(),
-      onBackToHarnessList: vi.fn(),
+      onChooseModel: vi.fn(),
+      onChoosePermissionMode: vi.fn(),
     };
     const view = render(
       <ComposerSettings
         picker="harness"
-        effortOptions={[]}
+        effortOptions={[{ id: "high", label: "高" }]}
         speedOptions={[]}
-        permissionModes={[]}
-        models={[]}
+        permissionModes={[
+          {
+            id: ":workspace" as never,
+            label: "工作区访问",
+            description: "工作区",
+            permissions: "",
+            approvalPolicy: "never",
+            approvalsReviewer: "auto_review",
+          },
+        ]}
+        models={OFFICIAL_MODELS as never}
         harnessPlugins={[{ id: "hermes", name: "Hermes" }]}
         selectedHarnessId={null}
-        selectedHarnessName=""
         harnessInspection={null}
         harnessInspectError=""
         selectedHarnessModelId={null}
         selectedHarnessThinkingId={null}
         selectedHarnessPermissionModeId={null}
         selectedEffort={null}
-        selectedModel=""
-        selectedModelLabel="默认模型"
+        selectedModel="gpt-5-codex"
+        selectedModelLabel="GPT-5 Codex"
         selectedServiceTier={null}
         selectedSpeedLabel="正常"
-        selectedPermissionModeId={null}
+        selectedPermissionModeId={":workspace" as never}
         onPickerChange={() => undefined}
         onChooseEffort={() => undefined}
-        onChooseModel={() => undefined}
         onChooseSpeed={() => undefined}
-        onChoosePermissionMode={() => undefined}
         {...handlers}
         {...overrides}
       />,
@@ -203,121 +214,100 @@ describe("外部 Harness 选择器", () => {
     return { ...handlers, container: view.container };
   }
 
-  it("未选中时列出可用 harness", () => {
+  it("列表里同时有官方 Codex 与外部 harness，选中项打勾", () => {
+    renderSettings();
+
+    // 没有 codex 选项就退不回官方，这正是之前那个 bug。
+    expect(screen.getByText("官方 Codex")).not.toBeNull();
+    expect(screen.getByText("Hermes")).not.toBeNull();
+
+    const official = screen.getByRole("button", { name: /官方 Codex/ });
+    expect(official.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("选官方 Codex 时回调 null，选外部 harness 时回调其 id", () => {
     const { onChooseHarness } = renderSettings();
 
     fireEvent.click(screen.getByRole("button", { name: /Hermes/ }));
-
     expect(onChooseHarness).toHaveBeenCalledWith("hermes");
+
+    fireEvent.click(screen.getByRole("button", { name: /官方 Codex/ }));
+    expect(onChooseHarness).toHaveBeenLastCalledWith(null);
   });
 
-  it("选中后按 capability 渲染模型、思考档位与权限模式", () => {
+  it("harness 面板只选 harness，不塞模型/思考/权限", () => {
+    // 模型选择统一归中间那个下拉框；这里出现模型就是设计错了。
     renderSettings({
       selectedHarnessId: "hermes",
-      selectedHarnessName: "Hermes",
       harnessInspection: READY_INSPECTION,
       selectedHarnessModelId: "claude-sonnet-4-5",
-      selectedHarnessThinkingId: "low",
-      selectedHarnessPermissionModeId: "plan",
-    });
-
-    expect(screen.getByText("Sonnet 4.5")).not.toBeNull();
-    expect(screen.getByText("Opus 4.1")).not.toBeNull();
-    expect(screen.getByText("低")).not.toBeNull();
-    expect(screen.getByText("计划")).not.toBeNull();
-  });
-
-  it("capability 关掉的分组不渲染", () => {
-    renderSettings({
-      selectedHarnessId: "hermes",
-      selectedHarnessName: "Hermes",
-      harnessInspection: {
-        ...READY_INSPECTION,
-        capabilities: {
-          ...READY_INSPECTION.capabilities,
-          selectModel: false,
-          selectPermissionMode: false,
-        },
-      },
     });
 
     expect(screen.queryByText("Sonnet 4.5")).toBeNull();
     expect(screen.queryByText("计划")).toBeNull();
-    // 思考档位仍然可选。
-    expect(screen.getByText("低")).not.toBeNull();
+    expect(screen.getByText("官方 Codex")).not.toBeNull();
   });
 
-  it("harness 不可用时显示上游原文", () => {
+  it("harness 探测失败时在面板里显示上游原文", () => {
     renderSettings({
       selectedHarnessId: "hermes",
-      selectedHarnessName: "Hermes",
-      harnessInspection: {
-        status: "notInstalled" as const,
-        errorMessage: "Claude Code CLI not found",
-        models: [],
-        thinkingOptions: [],
-        permissionModes: [],
-        capabilities: {
-          selectModel: false,
-          selectThinkingOption: false,
-          selectPermissionMode: false,
-          permissionModeScope: "live" as const,
-        },
-      },
+      harnessInspectError: "Claude Code CLI not found",
     });
 
     expect(screen.getByText("Claude Code CLI not found")).not.toBeNull();
   });
 
-  it("官方模型 picker 里不再混入 harness 分组", () => {
-    // 曾经把 harness 塞在 model picker 里，而 model/list 根本不含 harness
-    // （codex-host 已删除该增强路径），那个分组永远渲染不出来。入口现在独立。
-    const route = encodeHarnessRoute({
-      harnessId: "hermes",
-      model: "claude-sonnet-4-5",
+  it("选中外部 harness 后，模型下拉框换成该 harness 的模型", () => {
+    renderSettings({
+      picker: "model",
+      selectedHarnessId: "hermes",
+      harnessInspection: READY_INSPECTION,
+      selectedHarnessModelId: "claude-opus-4-1",
     });
-    const view = render(
-      <ComposerSettings
-        picker="model"
-        effortOptions={[]}
-        speedOptions={[]}
-        permissionModes={[]}
-        models={
-          [
-            { id: "gpt-5", model: "gpt-5-codex", displayName: "GPT-5 Codex" },
-            { model: route },
-          ] as never
-        }
-        harnessPlugins={[]}
-        selectedHarnessId={null}
-        selectedHarnessName=""
-        harnessInspection={null}
-        harnessInspectError=""
-        selectedHarnessModelId={null}
-        selectedHarnessThinkingId={null}
-        selectedHarnessPermissionModeId={null}
-        selectedEffort={null}
-        selectedModel=""
-        selectedModelLabel="默认模型"
-        selectedServiceTier={null}
-        selectedSpeedLabel="正常"
-        selectedPermissionModeId={null}
-        onPickerChange={() => undefined}
-        onChooseEffort={() => undefined}
-        onChooseModel={() => undefined}
-        onChooseSpeed={() => undefined}
-        onChoosePermissionMode={() => undefined}
-        onChooseHarness={() => undefined}
-        onChooseHarnessModel={() => undefined}
-        onChooseHarnessThinking={() => undefined}
-        onChooseHarnessPermissionMode={() => undefined}
-        onBackToHarnessList={() => undefined}
-      />,
-    );
 
-    expect(
-      view.container.querySelectorAll(".popover-options.model-options"),
-    ).toHaveLength(1);
-    expect(screen.queryByText("外部 Harness")).toBeNull();
+    // 选中的那个同时出现在标题和列表里，所以用 getAllByText。
+    expect(screen.getAllByText("Sonnet 4.5").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Opus 4.1").length).toBeGreaterThan(0);
+    // 官方模型不能混进来——它是另一条路。
+    expect(screen.queryByText("GPT-5 Codex")).toBeNull();
+  });
+
+  it("选中外部 harness 后，智能面板显示它的思考档位", () => {
+    renderSettings({
+      picker: "agent",
+      selectedHarnessId: "hermes",
+      harnessInspection: READY_INSPECTION,
+      selectedHarnessModelId: "claude-sonnet-4-5",
+      selectedHarnessThinkingId: "low",
+    });
+
+    // sonnet 声明了 supportedThinkingOptionIds，只列它支持的档位。
+    expect(screen.getByText("低")).not.toBeNull();
+    expect(screen.getByText("高")).not.toBeNull();
+    expect(screen.queryByText("速度")).toBeNull();
+  });
+
+  it("选中外部 harness 后，权限面板换成它的权限模式", () => {
+    renderSettings({
+      picker: "permission",
+      selectedHarnessId: "hermes",
+      harnessInspection: READY_INSPECTION,
+      selectedHarnessPermissionModeId: "plan",
+    });
+
+    expect(screen.getByText("计划")).not.toBeNull();
+    expect(screen.queryByText("工作区访问")).toBeNull();
+  });
+
+  it("官方 Codex 时三个面板都走原来的官方数据", () => {
+    renderSettings({
+      picker: "model",
+      selectedHarnessId: null,
+      harnessInspection: READY_INSPECTION,
+    });
+
+    // 选中的那个同时出现在标题和列表里，所以用 getAllByText。
+    expect(screen.getAllByText("GPT-5 Codex").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Sonnet 4.5")).toBeNull();
   });
 });

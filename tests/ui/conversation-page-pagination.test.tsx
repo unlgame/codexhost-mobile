@@ -20,20 +20,47 @@ function renderConversation(
     onSubmit?: (event: FormEvent) => void;
   } = {},
   onRetry = vi.fn(),
+  newChat: {
+    projects?: Array<{ cwd: string; name: string }>;
+    onProjectChange?: (cwd: string) => void;
+    onBackendChange?: (backendId: string) => void;
+  } | null = null,
 ) {
   const onSubmit = composer.onSubmit ?? vi.fn();
   const result = render(
     <ConversationPage
-      active={{
-        id: "thread-1",
-        cwd: "/tmp/project",
-        preview: "分页会话",
-        turns: [{ id: "turn-10", items: [] }],
-      }}
+      active={
+        newChat
+          ? {
+              id: "",
+              cwd: newChat.projects?.[0]?.cwd ?? "",
+              preview: "",
+              turns: [],
+            }
+          : {
+              id: "thread-1",
+              cwd: "/tmp/project",
+              preview: "分页会话",
+              turns: [{ id: "turn-10", items: [] }],
+            }
+      }
       backendId="mini"
       backendName="Mac mini"
-      backends={[]}
-      projectOptions={[]}
+      backends={
+        newChat
+          ? [
+              {
+                id: "mini",
+                name: "Mac mini",
+                baseUrl: "http://127.0.0.1:18766",
+                token: "t",
+                enabled: true,
+                order: 0,
+              },
+            ]
+          : []
+      }
+      projectOptions={newChat?.projects ?? []}
       loadState="ready"
       loadError=""
       olderTurnsState={olderTurnsState}
@@ -62,8 +89,8 @@ function renderConversation(
       harnessChipLabel=""
       imageInputRef={createRef<HTMLInputElement>()}
       onBack={() => undefined}
-      onNewChatBackendChange={() => undefined}
-      onNewChatProjectChange={() => undefined}
+      onNewChatBackendChange={newChat?.onBackendChange ?? (() => undefined)}
+      onNewChatProjectChange={newChat?.onProjectChange ?? (() => undefined)}
       onPin={async () => true}
       onRename={async () => true}
       onArchive={async () => true}
@@ -335,5 +362,72 @@ describe("会话详情历史分页", () => {
     expect(video.getAttribute("poster")).toMatch(/^data:image\/svg\+xml/);
     expect(view.getByText("PDF")).not.toBeNull();
     expect(view.getByRole("button", { name: "移除 需求.pdf" })).not.toBeNull();
+  });
+});
+
+describe("新会话的项目 / 机器选择器", () => {
+  const projects = [
+    { cwd: "/tmp/a", name: "项目 A" },
+    { cwd: "/tmp/b", name: "项目 B" },
+  ];
+
+  it("项目选择走 App 自己的 sheet，不再用原生 select", () => {
+    // 原生 <select> 在 Android WebView 里弹的是系统选择器，样式和 App 完全
+    // 脱节——所以这里必须是自己的按钮 + 底部 sheet。
+    const onProjectChange = vi.fn();
+    const { container } = renderConversation(
+      "idle",
+      vi.fn().mockResolvedValue(true),
+      {},
+      vi.fn(),
+      { projects, onProjectChange },
+    );
+
+    expect(container.querySelector("select")).toBeNull();
+
+    fireEvent.click(
+      within(container).getByRole("button", { name: "选择项目" }),
+    );
+    const sheet = within(container).getByRole("dialog", { name: "选择项目" });
+    fireEvent.click(within(sheet).getByText("项目 B"));
+
+    expect(onProjectChange).toHaveBeenCalledWith("/tmp/b");
+  });
+
+  it("机器选择走同一套 sheet", () => {
+    const onBackendChange = vi.fn();
+    const { container } = renderConversation(
+      "idle",
+      vi.fn().mockResolvedValue(true),
+      {},
+      vi.fn(),
+      { projects, onBackendChange },
+    );
+
+    fireEvent.click(
+      within(container).getByRole("button", { name: "选择机器" }),
+    );
+    const sheet = within(container).getByRole("dialog", { name: "选择机器" });
+    fireEvent.click(within(sheet).getByText("Mac mini"));
+
+    expect(onBackendChange).toHaveBeenCalledWith("mini");
+  });
+
+  it("没有项目时按钮禁用并给出提示", () => {
+    const { container } = renderConversation(
+      "idle",
+      vi.fn().mockResolvedValue(true),
+      {},
+      vi.fn(),
+      { projects: [] },
+    );
+
+    const view = within(container);
+    expect(
+      view.getByRole("button", { name: "选择项目" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      view.getByText("没有可用项目，暂时无法启动新聊天。"),
+    ).not.toBeNull();
   });
 });

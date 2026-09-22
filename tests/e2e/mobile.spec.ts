@@ -1069,7 +1069,9 @@ test("移动端可连接真实 app-server 并校验新聊天目标", async ({ pa
   await expect(
     page.getByRole("button", { name: "选择审批与权限模式" }),
   ).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "选择机器" })).toBeVisible();
+  // 「项目 / 机器」现在是自己画的按钮 + 底部 sheet，不再是原生 <select>
+  // （原生选择器在 Android WebView 里样式和 App 完全脱节）。
+  await expect(page.getByRole("button", { name: "选择机器" })).toBeVisible();
   const noProjects = page.getByText(
     "没有可用项目，暂时无法启动新聊天。",
   );
