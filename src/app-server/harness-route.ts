@@ -12,11 +12,11 @@
  * `permissionModeId`. Every byte of the payload is two lowercase hex digits.
  *
  * Known upstream nuance: codex-host validates `model` through
- * `harnessModelRefSchema`, i.e. it travels as `{ "id": "..." }`. This module
- * keeps the mobile-side surface flat (`model?: string`) and therefore accepts
- * both the `{ id }` object and a bare id string, normalising to the id. Routes
- * produced by `encodeHarnessRoute` always use the bare id string, so
- * `encodeHarnessRoute(decodeHarnessRoute(x)) === x` holds for them.
+ * `harnessModelRefSchema`, i.e. on the wire it is an object `{ "id": "..." }`.
+ * This module keeps the mobile-side surface flat (`model?: string`) and accepts
+ * both shapes when decoding, but **always encodes the object form** — emitting a
+ * bare id string makes codex-host's own decoder reject the route with
+ * "Invalid Harness plugin route", which is exactly what happened once.
  */
 
 export const HARNESS_ROUTE_PREFIX = "codexhost/plugin-v1@";
@@ -108,7 +108,12 @@ function parseRouteObject(value: unknown): ParsedRoute {
   const canonical: Record<string, unknown> = { harnessId };
   if (model !== undefined) {
     route.model = model;
-    canonical.model = rawModel;
+    // 线上必须是 `{ id }` 对象。codex-host 的 encodeHarnessPluginRoute 是
+    // `JSON.stringify(harnessPluginRouteSchema.parse(route))`，而它的 schema 把
+    // model 定义成 harnessModelRefSchema = z.object({ id }).strict()——
+    // 发裸字符串会被它的 parse 拒掉，报 "Invalid Harness plugin route"。
+    // （解码时仍然两种都收，见 parseModelRef。）
+    canonical.model = { id: model };
   }
   if (thinkingOptionId !== undefined) {
     route.thinkingOptionId = thinkingOptionId;

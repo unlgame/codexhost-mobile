@@ -107,6 +107,37 @@ describe("harness 路由编解码", () => {
     }
   });
 
+  it("encode 侧对含 model 的路由必须与 codex-host 的字节完全一致", () => {
+    // 这是真正的护栏。以前本端把 model 编成裸字符串，而 codex-host 的
+    // harnessPluginRouteSchema 要求 { id } 对象，它 decode 时直接抛
+    // "Invalid Harness plugin route"——只测「自己编、自己解」永远发现不了，
+    // 因为两边都用了同一个错误形状。
+    expect(encodeHarnessRoute({ harnessId: "hermes", model: "m1" })).toBe(
+      GOLDEN.modelOnly,
+    );
+    expect(
+      encodeHarnessRoute({ harnessId: "hermes", model: "claude-sonnet-4-5" }),
+    ).toBe(GOLDEN.objectModel);
+    expect(
+      encodeHarnessRoute({
+        harnessId: "qoder",
+        model: "auto",
+        thinkingOptionId: "high",
+        permissionModeId: "acceptEdits",
+      }),
+    ).toBe(GOLDEN.allFields);
+    expect(
+      encodeHarnessRoute({
+        harnessId: "hermes",
+        model: "m1",
+        permissionModeId: "plan",
+      }),
+    ).toBe(GOLDEN.modelPermission);
+    expect(encodeHarnessRoute({ harnessId: "x", model: "A-Za-z0-9._~-" })).toBe(
+      GOLDEN.transportSafeModel,
+    );
+  });
+
   it("前缀即协议声明", () => {
     expect(HARNESS_ROUTE_PREFIX).toBe("codexhost/plugin-v1@");
     expect(isHarnessRouteValue(GOLDEN.harnessIdOnly)).toBe(true);
