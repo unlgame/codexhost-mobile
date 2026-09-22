@@ -2239,7 +2239,10 @@ function BackendWorkspace({
         permissionModes={permissionModes}
         models={models}
         harnessPlugins={harnessPlugins}
-        selectedHarnessId={selectedHarnessId}
+        // 必须是**当前生效**的 harness（有线程时来自 thread/inspect，新会话时
+        // 来自选择器）。只传选择器状态的话，打开已有的 harness 线程时这里是
+        // null，模型弹层会错误地列成官方模型。
+        harnessId={chipHarnessId}
         harnessInspection={harnessInspection}
         harnessInspectError={harnessInspectError}
         selectedHarnessModelId={selectedHarnessModelId}

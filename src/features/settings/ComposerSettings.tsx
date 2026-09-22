@@ -27,7 +27,7 @@ export function ComposerSettings({
   permissionModes,
   models,
   harnessPlugins,
-  selectedHarnessId,
+  harnessId,
   harnessInspection,
   harnessInspectError,
   selectedHarnessModelId,
@@ -55,7 +55,7 @@ export function ComposerSettings({
   permissionModes: PermissionMode[];
   models: ModelCatalogEntry[];
   harnessPlugins: HarnessPluginOption[];
-  selectedHarnessId: string | null;
+  harnessId: string | null;
   harnessInspection: HarnessInspection | null;
   harnessInspectError: string;
   selectedHarnessModelId: string | null;
@@ -80,8 +80,8 @@ export function ComposerSettings({
   if (!picker) return null;
   const officialModels = models;
   // 选中外部 harness 时，模型/思考/权限都改由 harness 的目录驱动；官方 Codex
-  // （selectedHarnessId 为 null）走原来的路径。两者是互斥的两条路。
-  const externalHarness = Boolean(selectedHarnessId);
+  // （harnessId 为 null）走原来的路径。两者是互斥的两条路。
+  const externalHarness = Boolean(harnessId);
   const harnessModels = harnessInspection?.models ?? [];
   const harnessThinkingOptions = harnessInspection
     ? thinkingOptionsForModel(harnessInspection, selectedHarnessModelId ?? undefined)
@@ -242,7 +242,7 @@ export function ComposerSettings({
         {picker === "harness" && (
           <HarnessPicker
             plugins={harnessPlugins}
-            selectedHarnessId={selectedHarnessId}
+            harnessId={harnessId}
             inspectError={harnessInspectError}
             onChooseHarness={onChooseHarness}
           />

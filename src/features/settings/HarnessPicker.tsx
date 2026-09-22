@@ -24,13 +24,17 @@ export const OFFICIAL_HARNESS_ID = "codex";
  */
 export function HarnessPicker({
   plugins,
-  selectedHarnessId,
+  harnessId,
   inspectError,
   onChooseHarness,
 }: {
   plugins: HarnessPluginOption[];
-  /** null 表示官方 Codex。 */
-  selectedHarnessId: string | null;
+  /**
+   * **当前生效**的 harness（有线程时是线程绑定的那个，新会话时是选择器的值）。
+   * null 表示官方 Codex。注意别传「选择器状态」——那是有线程时为空的那个，
+   * 会让人误判成官方模式。
+   */
+  harnessId: string | null;
   inspectError: string;
   onChooseHarness: (harnessId: string | null) => void;
 }) {
@@ -49,8 +53,8 @@ export function HarnessPicker({
       <div className="popover-options" aria-label={t("Harness 列表")}>
         {entries.map((entry) => {
           const selected = entry.official
-            ? !selectedHarnessId
-            : entry.id === selectedHarnessId;
+            ? !harnessId
+            : entry.id === harnessId;
           return (
             <button
               key={entry.id}

@@ -192,7 +192,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
         ]}
         models={OFFICIAL_MODELS as never}
         harnessPlugins={[{ id: "hermes", name: "Hermes" }]}
-        selectedHarnessId={null}
+        harnessId={null}
         harnessInspection={null}
         harnessInspectError=""
         selectedHarnessModelId={null}
@@ -238,7 +238,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   it("harness 面板只选 harness，不塞模型/思考/权限", () => {
     // 模型选择统一归中间那个下拉框；这里出现模型就是设计错了。
     renderSettings({
-      selectedHarnessId: "hermes",
+      harnessId: "hermes",
       harnessInspection: READY_INSPECTION,
       selectedHarnessModelId: "claude-sonnet-4-5",
     });
@@ -250,7 +250,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
 
   it("harness 探测失败时在面板里显示上游原文", () => {
     renderSettings({
-      selectedHarnessId: "hermes",
+      harnessId: "hermes",
       harnessInspectError: "Claude Code CLI not found",
     });
 
@@ -260,7 +260,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   it("选中外部 harness 后，模型下拉框换成该 harness 的模型", () => {
     renderSettings({
       picker: "model",
-      selectedHarnessId: "hermes",
+      harnessId: "hermes",
       harnessInspection: READY_INSPECTION,
       selectedHarnessModelId: "claude-opus-4-1",
     });
@@ -275,7 +275,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   it("选中外部 harness 后，智能面板显示它的思考档位", () => {
     renderSettings({
       picker: "agent",
-      selectedHarnessId: "hermes",
+      harnessId: "hermes",
       harnessInspection: READY_INSPECTION,
       selectedHarnessModelId: "claude-sonnet-4-5",
       selectedHarnessThinkingId: "low",
@@ -290,7 +290,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   it("选中外部 harness 后，权限面板换成它的权限模式", () => {
     renderSettings({
       picker: "permission",
-      selectedHarnessId: "hermes",
+      harnessId: "hermes",
       harnessInspection: READY_INSPECTION,
       selectedHarnessPermissionModeId: "plan",
     });
@@ -302,7 +302,7 @@ describe("Harness 选择器与跟随它的模型/思考/权限", () => {
   it("官方 Codex 时三个面板都走原来的官方数据", () => {
     renderSettings({
       picker: "model",
-      selectedHarnessId: null,
+      harnessId: null,
       harnessInspection: READY_INSPECTION,
     });
 
