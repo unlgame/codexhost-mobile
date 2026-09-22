@@ -174,6 +174,16 @@ export function tryDecodeHarnessRoute(value: unknown): HarnessRoute | null {
   }
 }
 
+/** 编码失败（非法 id）时返回 null，别让调用方崩在渲染里。 */
+export function tryEncodeHarnessRoute(route: HarnessRoute | null): string | null {
+  if (!route) return null;
+  try {
+    return encodeHarnessRoute(route);
+  } catch {
+    return null;
+  }
+}
+
 /** `harness 显示名 · 路由内的 model`, falling back to the raw harness id. */
 export function harnessRouteLabel(route: HarnessRoute, displayName?: string): string {
   const name =

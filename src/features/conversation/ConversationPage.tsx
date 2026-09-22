@@ -153,6 +153,9 @@ export function ConversationPage({
   onSelectImages,
   onOpenAgentSettings,
   onOpenPermissionSettings,
+  onOpenHarnessSettings,
+  showHarnessChip,
+  harnessChipLabel,
   onDraftChange,
   onInterrupt,
 }: {
@@ -200,6 +203,9 @@ export function ConversationPage({
   onSelectImages: (files: FileList | null) => Promise<void>;
   onOpenAgentSettings: () => void;
   onOpenPermissionSettings: () => void;
+  onOpenHarnessSettings: () => void;
+  showHarnessChip: boolean;
+  harnessChipLabel: string;
   onDraftChange: (value: string) => void;
   onInterrupt: () => void | Promise<void>;
 }) {
@@ -576,6 +582,18 @@ export function ConversationPage({
           </div>
         )}
         <div className="chips">
+          {showHarnessChip && (
+            <button
+              type="button"
+              aria-label={t("选择外部 Harness")}
+              // harness 只在 thread/start 时绑定（上游会以 -32602 拒绝会话中
+              // 换 harness），所以已绑定的线程只展示、不可点。
+              disabled={!interactive || !isNewChat}
+              onClick={onOpenHarnessSettings}
+            >
+              {harnessChipLabel}
+            </button>
+          )}
           <button
             type="button"
             aria-label={t("选择模型、智能与速度")}

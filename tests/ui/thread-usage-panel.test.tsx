@@ -135,19 +135,56 @@ describe("用量 chip 与展开面板", () => {
   });
 });
 
-describe("model picker 的外部 Harness 分组", () => {
-  const route = encodeHarnessRoute({ harnessId: "hermes", model: "claude-sonnet-4-5" });
+describe("外部 Harness 选择器", () => {
+  const READY_INSPECTION = {
+    status: "ready" as const,
+    models: [
+      {
+        id: "claude-sonnet-4-5",
+        label: "Sonnet 4.5",
+        thinkingOptionIds: ["low", "high"],
+      },
+      { id: "claude-opus-4-1", label: "Opus 4.1", thinkingOptionIds: [] },
+    ],
+    defaultModelId: "claude-sonnet-4-5",
+    thinkingOptions: [
+      { id: "low", label: "低" },
+      { id: "high", label: "高" },
+    ],
+    defaultThinkingOptionId: "low",
+    permissionModes: [{ id: "plan", label: "计划" }],
+    defaultPermissionModeId: "plan",
+    capabilities: {
+      selectModel: true,
+      selectThinkingOption: true,
+      selectPermissionMode: true,
+      permissionModeScope: "live" as const,
+    },
+  };
 
-  function renderPicker(models: unknown[]) {
-    const onChooseModel = vi.fn();
+  function renderSettings(overrides: Record<string, unknown> = {}) {
+    const handlers = {
+      onChooseHarness: vi.fn(),
+      onChooseHarnessModel: vi.fn(),
+      onChooseHarnessThinking: vi.fn(),
+      onChooseHarnessPermissionMode: vi.fn(),
+      onBackToHarnessList: vi.fn(),
+    };
     const view = render(
       <ComposerSettings
-        picker="model"
+        picker="harness"
         effortOptions={[]}
         speedOptions={[]}
         permissionModes={[]}
-        models={models as never}
-        harnessPluginNames={{ hermes: "Hermes" }}
+        models={[]}
+        harnessPlugins={[{ id: "hermes", name: "Hermes" }]}
+        selectedHarnessId={null}
+        selectedHarnessName=""
+        harnessInspection={null}
+        harnessInspectError=""
+        selectedHarnessModelId={null}
+        selectedHarnessThinkingId={null}
+        selectedHarnessPermissionModeId={null}
         selectedEffort={null}
         selectedModel=""
         selectedModelLabel="默认模型"
@@ -156,38 +193,131 @@ describe("model picker 的外部 Harness 分组", () => {
         selectedPermissionModeId={null}
         onPickerChange={() => undefined}
         onChooseEffort={() => undefined}
-        onChooseModel={onChooseModel}
+        onChooseModel={() => undefined}
         onChooseSpeed={() => undefined}
         onChoosePermissionMode={() => undefined}
+        {...handlers}
+        {...overrides}
       />,
     );
-    return { onChooseModel, container: view.container };
+    return { ...handlers, container: view.container };
   }
 
-  it("官方模型与外部 Harness 分成两组，互不污染", () => {
-    const { container } = renderPicker([
-      { id: "gpt-5", model: "gpt-5-codex", displayName: "GPT-5 Codex" },
-      { model: route },
-    ]);
-    const groups = container.querySelectorAll(".popover-options.model-options");
-    expect(groups).toHaveLength(2);
-    expect(within(groups[0] as HTMLElement).getByText("GPT-5 Codex")).not.toBeNull();
-    expect(within(groups[0] as HTMLElement).queryByText("Hermes · claude-sonnet-4-5")).toBeNull();
-    expect(screen.getByText("外部 Harness")).not.toBeNull();
-    expect(screen.getByText("Hermes · claude-sonnet-4-5")).not.toBeNull();
+  it("未选中时列出可用 harness", () => {
+    const { onChooseHarness } = renderSettings();
+
+    fireEvent.click(screen.getByRole("button", { name: /Hermes/ }));
+
+    expect(onChooseHarness).toHaveBeenCalledWith("hermes");
   });
 
-  it("没有 harness 条目时不渲染分组", () => {
-    const { container } = renderPicker([
-      { id: "gpt-5", model: "gpt-5-codex", displayName: "GPT-5 Codex" },
-    ]);
-    expect(container.querySelectorAll(".popover-options.model-options")).toHaveLength(1);
+  it("选中后按 capability 渲染模型、思考档位与权限模式", () => {
+    renderSettings({
+      selectedHarnessId: "hermes",
+      selectedHarnessName: "Hermes",
+      harnessInspection: READY_INSPECTION,
+      selectedHarnessModelId: "claude-sonnet-4-5",
+      selectedHarnessThinkingId: "low",
+      selectedHarnessPermissionModeId: "plan",
+    });
+
+    expect(screen.getByText("Sonnet 4.5")).not.toBeNull();
+    expect(screen.getByText("Opus 4.1")).not.toBeNull();
+    expect(screen.getByText("低")).not.toBeNull();
+    expect(screen.getByText("计划")).not.toBeNull();
+  });
+
+  it("capability 关掉的分组不渲染", () => {
+    renderSettings({
+      selectedHarnessId: "hermes",
+      selectedHarnessName: "Hermes",
+      harnessInspection: {
+        ...READY_INSPECTION,
+        capabilities: {
+          ...READY_INSPECTION.capabilities,
+          selectModel: false,
+          selectPermissionMode: false,
+        },
+      },
+    });
+
+    expect(screen.queryByText("Sonnet 4.5")).toBeNull();
+    expect(screen.queryByText("计划")).toBeNull();
+    // 思考档位仍然可选。
+    expect(screen.getByText("低")).not.toBeNull();
+  });
+
+  it("harness 不可用时显示上游原文", () => {
+    renderSettings({
+      selectedHarnessId: "hermes",
+      selectedHarnessName: "Hermes",
+      harnessInspection: {
+        status: "notInstalled" as const,
+        errorMessage: "Claude Code CLI not found",
+        models: [],
+        thinkingOptions: [],
+        permissionModes: [],
+        capabilities: {
+          selectModel: false,
+          selectThinkingOption: false,
+          selectPermissionMode: false,
+          permissionModeScope: "live" as const,
+        },
+      },
+    });
+
+    expect(screen.getByText("Claude Code CLI not found")).not.toBeNull();
+  });
+
+  it("官方模型 picker 里不再混入 harness 分组", () => {
+    // 曾经把 harness 塞在 model picker 里，而 model/list 根本不含 harness
+    // （codex-host 已删除该增强路径），那个分组永远渲染不出来。入口现在独立。
+    const route = encodeHarnessRoute({
+      harnessId: "hermes",
+      model: "claude-sonnet-4-5",
+    });
+    const view = render(
+      <ComposerSettings
+        picker="model"
+        effortOptions={[]}
+        speedOptions={[]}
+        permissionModes={[]}
+        models={
+          [
+            { id: "gpt-5", model: "gpt-5-codex", displayName: "GPT-5 Codex" },
+            { model: route },
+          ] as never
+        }
+        harnessPlugins={[]}
+        selectedHarnessId={null}
+        selectedHarnessName=""
+        harnessInspection={null}
+        harnessInspectError=""
+        selectedHarnessModelId={null}
+        selectedHarnessThinkingId={null}
+        selectedHarnessPermissionModeId={null}
+        selectedEffort={null}
+        selectedModel=""
+        selectedModelLabel="默认模型"
+        selectedServiceTier={null}
+        selectedSpeedLabel="正常"
+        selectedPermissionModeId={null}
+        onPickerChange={() => undefined}
+        onChooseEffort={() => undefined}
+        onChooseModel={() => undefined}
+        onChooseSpeed={() => undefined}
+        onChoosePermissionMode={() => undefined}
+        onChooseHarness={() => undefined}
+        onChooseHarnessModel={() => undefined}
+        onChooseHarnessThinking={() => undefined}
+        onChooseHarnessPermissionMode={() => undefined}
+        onBackToHarnessList={() => undefined}
+      />,
+    );
+
+    expect(
+      view.container.querySelectorAll(".popover-options.model-options"),
+    ).toHaveLength(1);
     expect(screen.queryByText("外部 Harness")).toBeNull();
-  });
-
-  it("选中 harness 后原样透传 model ref", () => {
-    const { onChooseModel } = renderPicker([{ model: route }]);
-    fireEvent.click(screen.getByRole("button", { name: /Hermes · claude-sonnet-4-5/ }));
-    expect(onChooseModel).toHaveBeenCalledWith(route);
   });
 });

@@ -58,6 +58,8 @@ function renderConversation(
       selectedModelLabel="Codex"
       selectedEffort={null}
       selectedPermissionLabel="工作区"
+      showHarnessChip={false}
+      harnessChipLabel=""
       imageInputRef={createRef<HTMLInputElement>()}
       onBack={() => undefined}
       onNewChatBackendChange={() => undefined}
@@ -73,6 +75,7 @@ function renderConversation(
       onSelectImages={async () => undefined}
       onOpenAgentSettings={() => undefined}
       onOpenPermissionSettings={() => undefined}
+      onOpenHarnessSettings={() => undefined}
       onDraftChange={() => undefined}
       onInterrupt={() => undefined}
     />,

@@ -526,6 +526,8 @@ button, a, summary, [role="button"] { -webkit-tap-highlight-color: transparent; 
 .popover-eyebrow { padding: 2px 16px 10px; color: #999; font-size: 13px; }
 .popover-divider { height: 1px; margin: 8px 12px; background: #ececec; }
 .popover-options { display: grid; }
+/* harness picker 的空态与不可用态：没有可选 harness，或探测失败。 */
+.popover-empty { padding: 12px 16px; color: #777; font-size: 13px; line-height: 1.4; }
 .popover-options > button, .popover-link, .popover-title { width: 100%; min-width: 0; border: 0; border-radius: 14px; background: transparent; padding: 11px 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; text-align: left; }
 .popover-options > button > span, .popover-link > span, .popover-title > span { min-width: 0; display: grid; gap: 3px; }
 .popover-options strong, .popover-link strong, .popover-title strong { font-size: 15px; line-height: 1.35; }

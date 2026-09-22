@@ -1,10 +1,7 @@
 import { Chevron } from "../../ui/icons";
 import { t } from "../../i18n";
-import {
-  harnessModelLabel,
-  splitModelCatalog,
-  type HarnessModelOption,
-} from "../../app-server/harness-models";
+import type { HarnessInspection } from "../../app-server/harness-inspect";
+import { HarnessPicker, type HarnessPluginOption } from "./HarnessPicker";
 import {
   modelOptionMeta,
   type ModelCatalogEntry,
@@ -17,6 +14,7 @@ export type ComposerPicker =
   | "model"
   | "speed"
   | "permission"
+  | "harness"
   | null;
 
 export function ComposerSettings({
@@ -25,7 +23,14 @@ export function ComposerSettings({
   speedOptions,
   permissionModes,
   models,
-  harnessPluginNames,
+  harnessPlugins,
+  selectedHarnessId,
+  selectedHarnessName,
+  harnessInspection,
+  harnessInspectError,
+  selectedHarnessModelId,
+  selectedHarnessThinkingId,
+  selectedHarnessPermissionModeId,
   selectedEffort,
   selectedModel,
   selectedModelLabel,
@@ -37,13 +42,25 @@ export function ComposerSettings({
   onChooseModel,
   onChooseSpeed,
   onChoosePermissionMode,
+  onChooseHarness,
+  onChooseHarnessModel,
+  onChooseHarnessThinking,
+  onChooseHarnessPermissionMode,
+  onBackToHarnessList,
 }: {
   picker: ComposerPicker;
   effortOptions: Array<{ id: string; label: string; description?: string }>;
   speedOptions: Array<{ id: string | null; label: string; description: string }>;
   permissionModes: PermissionMode[];
   models: ModelCatalogEntry[];
-  harnessPluginNames?: Record<string, string>;
+  harnessPlugins: HarnessPluginOption[];
+  selectedHarnessId: string | null;
+  selectedHarnessName: string;
+  harnessInspection: HarnessInspection | null;
+  harnessInspectError: string;
+  selectedHarnessModelId: string | null;
+  selectedHarnessThinkingId: string | null;
+  selectedHarnessPermissionModeId: string | null;
   selectedEffort: string | null;
   selectedModel: string;
   selectedModelLabel: string;
@@ -55,10 +72,14 @@ export function ComposerSettings({
   onChooseModel: (model: string) => void;
   onChooseSpeed: (serviceTier: string | null) => void;
   onChoosePermissionMode: (mode: PermissionModeId) => void;
+  onChooseHarness: (harnessId: string) => void;
+  onChooseHarnessModel: (modelId: string) => void;
+  onChooseHarnessThinking: (thinkingOptionId: string) => void;
+  onChooseHarnessPermissionMode: (permissionModeId: string) => void;
+  onBackToHarnessList: () => void;
 }) {
   if (!picker) return null;
-  const { official, harness } = splitModelCatalog(models as unknown[]);
-  const officialModels = official as ModelCatalogEntry[];
+  const officialModels = models;
   return (
     <div className="composer-popover-backdrop" onClick={() => onPickerChange(null)}>
       <section
@@ -70,7 +91,9 @@ export function ComposerSettings({
               ? t("模型")
               : picker === "speed"
                 ? t("速度")
-                : t("智能")
+                : picker === "harness"
+                  ? t("外部 Harness")
+                  : t("智能")
         }
         onClick={(event) => event.stopPropagation()}
       >
@@ -141,40 +164,24 @@ export function ComposerSettings({
                 );
               })}
             </div>
-            {harness.length > 0 && (
-              <>
-                <div className="popover-divider" />
-                <div className="popover-eyebrow">{t("外部 Harness")}</div>
-                <div className="popover-options model-options" aria-label={t("外部 Harness")}>
-                  {harness.map((option: HarnessModelOption) => {
-                    const selected = option.model === selectedModel;
-                    return (
-                      <button
-                        key={option.model}
-                        className={selected ? "selected" : ""}
-                        aria-pressed={selected}
-                        onClick={() => {
-                          onChooseModel(option.model);
-                          onPickerChange(null);
-                        }}
-                      >
-                        <span>
-                          <strong>
-                            {harnessModelLabel(
-                              option,
-                              harnessPluginNames?.[option.harnessId],
-                            )}
-                          </strong>
-                          <small>{option.description}</small>
-                        </span>
-                        <i>{selected ? "✓" : ""}</i>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
           </>
+        )}
+        {picker === "harness" && (
+          <HarnessPicker
+            plugins={harnessPlugins}
+            selectedHarnessId={selectedHarnessId}
+            harnessName={selectedHarnessName}
+            inspection={harnessInspection}
+            inspectError={harnessInspectError}
+            selectedModelId={selectedHarnessModelId}
+            selectedThinkingId={selectedHarnessThinkingId}
+            selectedPermissionModeId={selectedHarnessPermissionModeId}
+            onChooseHarness={onChooseHarness}
+            onChooseModel={onChooseHarnessModel}
+            onChooseThinking={onChooseHarnessThinking}
+            onChoosePermissionMode={onChooseHarnessPermissionMode}
+            onBackToHarnessList={onBackToHarnessList}
+          />
         )}
         {picker === "speed" && (
           <>

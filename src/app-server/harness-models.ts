@@ -88,6 +88,41 @@ export function harnessPluginName(harnessId: string): string {
   return pluginDisplayNames.get(harnessId) ?? harnessId;
 }
 
+export interface HarnessPlugin {
+  id: string;
+  name: string;
+}
+
+/**
+ * `codexhost/harness/plugins/list` 的完整列表，给 harness picker 用。
+ *
+ * harness 只能从这里拿——`model/list` 不含 harness（codex-host 是纯透传，且
+ * 明确删掉过给该响应追加 harness 条目的路径）。顺带刷新显示名缓存，两处共用
+ * 一份，避免同一个 RPC 调两次。
+ */
+export async function loadHarnessPlugins(
+  client: AppServerClient | null | undefined,
+): Promise<HarnessPlugin[]> {
+  if (!client) return [];
+  try {
+    const result = await client.request<{
+      plugins?: Array<{ id?: unknown; name?: unknown }>;
+    }>(HARNESS_PLUGINS_LIST_METHOD, {});
+    const plugins: HarnessPlugin[] = [];
+    for (const plugin of result?.plugins ?? []) {
+      const id = text(plugin?.id);
+      if (!id) continue;
+      const name = text(plugin?.name) || id;
+      pluginDisplayNames.set(id, name);
+      plugins.push({ id, name });
+    }
+    return plugins;
+  } catch {
+    // 非 codexhost 后端会报错：退化成空列表，picker 显示「没有可用的外部 Harness」。
+    return [];
+  }
+}
+
 export function resetHarnessPluginNames(): void {
   pluginDisplayNames.clear();
 }

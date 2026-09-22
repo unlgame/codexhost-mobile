@@ -129,7 +129,18 @@ import {
   writeUnreadThreadIds,
 } from "./features/threads/thread-unread";
 import { busyHintFor } from "./app-server/busy-error";
-import { loadHarnessPluginNames } from "./app-server/harness-models";
+import {
+  harnessPluginName,
+  loadHarnessPlugins,
+} from "./app-server/harness-models";
+import { tryEncodeHarnessRoute } from "./app-server/harness-route";
+import {
+  THREAD_INSPECT_METHOD,
+  harnessIdFromThreadInspection,
+  inspectHarness,
+  type HarnessInspection,
+} from "./app-server/harness-inspect";
+import type { HarnessPluginOption } from "./features/settings/HarnessPicker";
 import {
   CODEXHOST_THREAD_USAGE_UPDATED_METHOD,
   inspectThreadUsage,
@@ -248,9 +259,25 @@ function BackendWorkspace({
   const [threadUsageByThread, setThreadUsageByThread] = useState<
     Record<string, ThreadUsageFields>
   >({});
-  const [harnessPluginNames, setHarnessPluginNames] = useState<
-    Record<string, string>
-  >({});
+  const [harnessPlugins, setHarnessPlugins] = useState<HarnessPluginOption[]>([]);
+  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(null);
+  const [harnessInspection, setHarnessInspection] =
+    useState<HarnessInspection | null>(null);
+  const [harnessInspectError, setHarnessInspectError] = useState("");
+  const [selectedHarnessModelId, setSelectedHarnessModelId] = useState<
+    string | null
+  >(null);
+  const [selectedHarnessThinkingId, setSelectedHarnessThinkingId] = useState<
+    string | null
+  >(null);
+  const [selectedHarnessPermissionModeId, setSelectedHarnessPermissionModeId] =
+    useState<string | null>(null);
+  /**
+   * 当前线程绑定的 harness。harness 只在 `thread/start` 时绑定，会话中换不了，
+   * 所以这个值既用于显示，也用于决定 `turn/start` 要不要带 `model`
+   * （带错会被上游以 -32602 拒绝）。
+   */
+  const [activeHarnessId, setActiveHarnessId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState("");
   const [notice, setNotice] = useState("");
   const [picker, setPicker] = useState<ComposerPicker>(null);
@@ -906,9 +933,9 @@ function BackendWorkspace({
               availableProfiles[0]?.id ||
               "";
             setModels(modelResult.data);
-            void loadHarnessPluginNames(client).then((names) => {
+            void loadHarnessPlugins(client).then((plugins) => {
               if (disposed || manager.client(backend.id) !== source) return;
-              setHarnessPluginNames(Object.fromEntries(names));
+              setHarnessPlugins(plugins);
             });
             setRateLimits(rateLimitResult);
             setPermissionProfiles(availableProfiles);
@@ -1118,6 +1145,18 @@ function BackendWorkspace({
       setActiveSettingsSynchronized(session.settingsSynchronized);
       setActiveThreadAccessMode(session.accessMode);
       setActiveThreadResumeError(session.resumeError ?? "");
+      // 问一次线程的 harness 归属：外部 harness 线程要显示绑定关系，而且
+      // turn/start 不能再带官方 model（会被上游以 -32602 拒绝）。
+      void client
+        .request(THREAD_INSPECT_METHOD, { threadId })
+        .then((payload) => {
+          if (sequence !== openSequenceRef.current) return;
+          setActiveHarnessId(harnessIdFromThreadInspection(payload));
+        })
+        .catch(() => {
+          // 非 codexhost 后端不认这个方法：当官方线程处理即可。
+          if (sequence === openSequenceRef.current) setActiveHarnessId(null);
+        });
       setSelectedModel(session.model ?? "");
       setSelectedEffort(resumedSettings.effort);
       setSelectedServiceTier(resumedSettings.serviceTier);
@@ -1345,13 +1384,20 @@ function BackendWorkspace({
           activePermissionProfile?: { id: string } | null;
         }>("thread/start", {
           cwd: thread?.cwd ?? null,
-          ...(selectedModel ? { model: selectedModel } : {}),
+          // harness 路由优先：选中外部 harness 时这条链路的 model 就是它，
+          // 与官方模型互斥（见 harness-inspect.ts 的说明）。
+          ...(harnessRoute ?? selectedModel
+            ? { model: harnessRoute ?? selectedModel }
+            : {}),
           ...(selectedServiceTier ? { serviceTier: selectedServiceTier } : {}),
           ...(effectivePermission ? { permissions: effectivePermission } : {}),
           approvalPolicy: effectiveApprovalPolicy,
           approvalsReviewer: effectiveApprovalsReviewer,
         });
         thread = started.thread;
+        // harness 已在这个线程上绑定，会话中不可更换——记下来，既用于显示，
+        // 也用于决定 turn/start 要不要带 model。
+        setActiveHarnessId(selectedHarnessId);
         activeThreadTargetRef.current = thread.id;
         setThreads((current) => [
           // 先本地填上 preview，侧边栏立刻显示首段文本而不是「新对话」；
@@ -1414,11 +1460,17 @@ function BackendWorkspace({
       const startedTurn = await clientRef.current.request<{ turn: AnyRecord }>("turn/start", {
         threadId: thread.id,
         input: buildTurnInput(text, pendingImages, uploadedFiles),
-        ...(shouldSendSettings && selectedModel ? { model: selectedModel } : {}),
-        ...(shouldSendSettings && selectedEffort
+        // harness 线程不带 model/effort/serviceTier：那三项是官方模型的设置，
+        // 发过去会被上游的 #startExternalTurn 以 -32602 "Turn Model carrier does
+        // not belong to the Thread Harness" 拒绝。harness 的模型/思考/权限改走
+        // codexhost/thread/*/select。
+        ...(shouldSendSettings && !activeHarnessId && selectedModel
+          ? { model: selectedModel }
+          : {}),
+        ...(shouldSendSettings && !activeHarnessId && selectedEffort
           ? { effort: selectedEffort }
           : {}),
-        ...(shouldSendSettings && selectedServiceTier
+        ...(shouldSendSettings && !activeHarnessId && selectedServiceTier
           ? { serviceTier: selectedServiceTier }
           : {}),
         ...(shouldSendSettings && effectivePermission
@@ -1758,6 +1810,62 @@ function BackendWorkspace({
     if (!active?.id) setNewChatPermissionMode(mode);
     setPicker(null);
   };
+  const chooseHarness = (harnessId: string) => {
+    setSelectedHarnessId(harnessId);
+    setHarnessInspection(null);
+    setHarnessInspectError("");
+    const client = clientRef.current;
+    if (!client) return;
+    void inspectHarness(client, harnessId, active?.cwd ?? null)
+      .then((inspection) => {
+        setHarnessInspection(inspection);
+        // 用目录里的默认值起手，用户不选也能直接开聊。
+        if (inspection.status === "ready") {
+          setSelectedHarnessModelId(
+            (current) =>
+              current ??
+              inspection.defaultModelId ??
+              inspection.models[0]?.id ??
+              null,
+          );
+          setSelectedHarnessThinkingId(
+            (current) =>
+              current ?? inspection.defaultThinkingOptionId ?? null,
+          );
+          setSelectedHarnessPermissionModeId(
+            (current) =>
+              current ?? inspection.defaultPermissionModeId ?? null,
+          );
+        }
+      })
+      .catch((reason) => {
+        setHarnessInspectError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
+      });
+  };
+  const backToHarnessList = () => {
+    setSelectedHarnessId(null);
+    setHarnessInspection(null);
+    setHarnessInspectError("");
+  };
+  // harness 只在 thread/start 时绑定：这个路由字符串就是 thread/start 的 model。
+  const harnessRoute = tryEncodeHarnessRoute(
+    selectedHarnessId
+      ? {
+          harnessId: selectedHarnessId,
+          ...(selectedHarnessModelId
+            ? { model: selectedHarnessModelId }
+            : {}),
+          ...(selectedHarnessThinkingId
+            ? { thinkingOptionId: selectedHarnessThinkingId }
+            : {}),
+          ...(selectedHarnessPermissionModeId
+            ? { permissionModeId: selectedHarnessPermissionModeId }
+            : {}),
+        }
+      : null,
+  );
   const approval = requests[0] ?? null;
   const finishRequest = (decision: "accept" | "decline") => {
     if (!approval) return;
@@ -1805,6 +1913,9 @@ function BackendWorkspace({
       null;
     openSequenceRef.current += 1;
     activeThreadTargetRef.current = null;
+    // 新会话不再绑定任何 harness；选择器重新可用（harness 只在 thread/start
+    // 时绑定，会话中换不了）。
+    setActiveHarnessId(null);
     resetDraftContext();
     const defaultPermissionMode =
       defaultNewChatPermissionMode(
@@ -1976,6 +2087,17 @@ function BackendWorkspace({
           onSelectImages={selectImages}
           onOpenAgentSettings={() => setPicker("agent")}
           onOpenPermissionSettings={() => setPicker("permission")}
+          onOpenHarnessSettings={() => setPicker("harness")}
+          // 会话中不能换 harness（上游在 thread/start 时绑定），所以只在
+          // 新会话里显示可选入口；已绑定的线程只显示当前 harness。
+          showHarnessChip={!active?.id || Boolean(activeHarnessId)}
+          harnessChipLabel={
+            activeHarnessId
+              ? harnessPluginName(activeHarnessId)
+              : selectedHarnessId
+                ? harnessPluginName(selectedHarnessId)
+                : t("外部 Harness")
+          }
           onDraftChange={setDraft}
           onInterrupt={interrupt}
         />
@@ -2023,7 +2145,16 @@ function BackendWorkspace({
         speedOptions={speedOptions}
         permissionModes={permissionModes}
         models={models}
-        harnessPluginNames={harnessPluginNames}
+        harnessPlugins={harnessPlugins}
+        selectedHarnessId={selectedHarnessId}
+        selectedHarnessName={
+          selectedHarnessId ? harnessPluginName(selectedHarnessId) : ""
+        }
+        harnessInspection={harnessInspection}
+        harnessInspectError={harnessInspectError}
+        selectedHarnessModelId={selectedHarnessModelId}
+        selectedHarnessThinkingId={selectedHarnessThinkingId}
+        selectedHarnessPermissionModeId={selectedHarnessPermissionModeId}
         selectedEffort={selectedEffort}
         selectedModel={selectedModel}
         selectedModelLabel={selectedModelLabel}
@@ -2035,6 +2166,11 @@ function BackendWorkspace({
         onChooseModel={chooseModel}
         onChooseSpeed={setSelectedServiceTier}
         onChoosePermissionMode={choosePermissionMode}
+        onChooseHarness={chooseHarness}
+        onChooseHarnessModel={setSelectedHarnessModelId}
+        onChooseHarnessThinking={setSelectedHarnessThinkingId}
+        onChooseHarnessPermissionMode={setSelectedHarnessPermissionModeId}
+        onBackToHarnessList={backToHarnessList}
       />
     </main>
   );
