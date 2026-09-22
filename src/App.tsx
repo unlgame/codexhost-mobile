@@ -1487,8 +1487,9 @@ function BackendWorkspace({
         threadId: thread.id,
         input: buildTurnInput(text, pendingImages, uploadedFiles),
         // harness 线程不带 model/effort/serviceTier：那三项是官方模型的设置，
-        // 发过去会被上游的 #startExternalTurn 以 -32602 "Turn Model carrier does
-        // not belong to the Thread Harness" 拒绝。harness 的模型/思考/权限改走
+        // 发过去会被上游的 #startExternalTurn 以 -32602
+        // Turn Model carrier does not belong to the Thread Harness 拒绝。
+        // harness 的模型/思考/权限改走
         // codexhost/thread/*/select。
         ...(shouldSendSettings && !activeHarnessId && selectedModel
           ? { model: selectedModel }

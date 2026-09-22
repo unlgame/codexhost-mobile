@@ -82,6 +82,38 @@ function formatResetTime(timestamp: number | null) {
 }
 
 /** 紧凑 chip：只显示上下文占比，点击展开完整用量面板。 */
+/**
+ * chip 的摘要文案。口径对齐 codex-host 的 renderer-usage-control：
+ *
+ *   summary = [credits, CH xx.x%, $cost]，中间用 · 连接，都没有时才退回「用量」
+ *   （注释里别用 ASCII 双引号：i18n 测试会把成对的引号当成 t() 字面量。）
+ *
+ * 也就是说它主推的是 **CH（缓存命中率）**，上下文占比只在上面几项都没有时
+ * 才拿来兜底——而原来这个 chip 固定显示上下文占比，口径是对不上的。
+ */
+export function usageChipLabel(usage: ThreadUsageFields | null): string {
+  if (!usage) return t("用量");
+  const summary: string[] = [];
+  if (usage.totalCredits !== null) {
+    summary.push(
+      usage.totalCredits > 0 && usage.totalCredits < 0.001
+        ? "<0.001 credits"
+        : `${usage.totalCredits.toFixed(3)} credits`,
+    );
+  }
+  if (usage.cacheHitRatePercent !== null) {
+    summary.push(`CH ${formatPercent(usage.cacheHitRatePercent)}`);
+  }
+  if (usage.totalCostUsd !== null) summary.push(formatUsd(usage.totalCostUsd));
+  if (summary.length > 0) return summary.join(" · ");
+  if (usage.contextUsagePercent !== null) {
+    return t("上下文 {percent}", {
+      percent: formatPercent(usage.contextUsagePercent),
+    });
+  }
+  return t("用量");
+}
+
 export function ThreadUsageChip({
   usage,
   expanded,
@@ -91,7 +123,6 @@ export function ThreadUsageChip({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const percent = usage?.contextUsagePercent ?? null;
   return (
     <button
       type="button"
@@ -100,9 +131,7 @@ export function ThreadUsageChip({
       aria-label={t("查看用量")}
       onClick={onToggle}
     >
-      {percent === null
-        ? t("用量")
-        : t("上下文 {percent}", { percent: formatPercent(percent) })}
+      {usageChipLabel(usage)}
     </button>
   );
 }
@@ -116,6 +145,12 @@ function usageRows(usage: ThreadUsageFields): Array<[string, string]> {
         : `${formatPercent(usage.contextUsagePercent)} / ${formatTokenCount(
             usage.contextWindowTokens,
           )}`
+    ],
+    [
+      t("最近缓存命中率"),
+      usage.cacheHitRatePercent === null
+        ? "—"
+        : `CH ${formatPercent(usage.cacheHitRatePercent)}`,
     ],
     [t("缓存读取"), formatTokenCount(usage.cachedInputTokens)],
     [t("缓存写入"), formatTokenCount(usage.cacheWriteInputTokens)],

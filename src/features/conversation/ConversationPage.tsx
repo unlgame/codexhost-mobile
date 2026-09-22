@@ -287,15 +287,6 @@ export function ConversationPage({
             role="group"
             aria-label={t("会话详情操作")}
           >
-            <ThreadUsageChip
-              usage={usage}
-              expanded={usageOpen}
-              onToggle={() => {
-                setActionsOpen(false);
-                setStatusOpen(false);
-                setUsageOpen((current) => !current);
-              }}
-            />
             <button
               className="round-button"
               type="button"
@@ -312,15 +303,6 @@ export function ConversationPage({
           </div>
         )}
       </header>
-      <ThreadUsagePanel
-        open={usageOpen}
-        usage={usage}
-        onClose={() => setUsageOpen(false)}
-        onOpenStatus={() => {
-          setUsageOpen(false);
-          setStatusOpen(true);
-        }}
-      />
       <ConversationActionMenu
         open={actionsOpen}
         readOnly={accessMode === "readOnly"}
@@ -655,7 +637,36 @@ export function ConversationPage({
           >
             {selectedPermissionLabel}
           </button>
+          {!!active.id && (
+            // 用量放在这排 chip 里、紧跟模型/权限之后，而不是标题栏——这是
+            // codex-host 自己的口径（renderer-usage-control.ts）：
+            //   Usage is secondary metadata, not a primary composer action.
+            // 它明说自己坐在 Model / Permission-mode / Agent 三个 trigger 旁边。
+            // （注释里不要用 ASCII 双引号：i18n 测试会把成对的引号当成 t() 字面量。）
+            <ThreadUsageChip
+              usage={usage}
+              expanded={usageOpen}
+              onToggle={() => {
+                setActionsOpen(false);
+                setStatusOpen(false);
+                setUsageOpen((current) => !current);
+              }}
+            />
+          )}
         </div>
+        {/* 面板挂在 .composer-wrap 下（它是 position: fixed，本身就是定位祖先），
+            用 bottom: 100% 向上展开。之前它挂在 <header> 的兄弟位置，而
+            .conversation / .app-shell 都没有 position，包含块落到视口，
+            top: calc(100% + 6px) 直接把它送到屏幕外——点了当然看起来没反应。 */}
+        <ThreadUsagePanel
+          open={usageOpen}
+          usage={usage}
+          onClose={() => setUsageOpen(false)}
+          onOpenStatus={() => {
+            setUsageOpen(false);
+            setStatusOpen(true);
+          }}
+        />
         <div className="composer">
           <input
             ref={imageInputRef}

@@ -111,16 +111,25 @@ function renderConversation(
 }
 
 describe("会话详情历史分页", () => {
-  it("右上角两个操作入口位于同一个按钮组", () => {
+  it("用量在 composer 的 chip 排里，不挤在标题栏", () => {
+    // codex-host 的口径（renderer-usage-control.ts）：usage 是次要元数据，
+    // 坐在 model / permission-mode / agent 三个 trigger 旁边，而不是标题栏的
+    // 主操作簇里。
     const { container } = renderConversation("exhausted");
     const view = within(container);
     const group = view.getByRole("group", { name: "会话详情操作" });
 
     expect(
-      within(group).getByRole("button", { name: "查看用量" }),
-    ).not.toBeNull();
+      within(group).queryByRole("button", { name: "查看用量" }),
+    ).toBeNull();
     expect(
       within(group).getByRole("button", { name: "会话操作" }),
+    ).not.toBeNull();
+
+    const chips = container.querySelector(".chips");
+    expect(chips).not.toBeNull();
+    expect(
+      within(chips as HTMLElement).getByRole("button", { name: "查看用量" }),
     ).not.toBeNull();
   });
 

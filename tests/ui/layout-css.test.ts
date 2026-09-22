@@ -24,7 +24,7 @@ describe("悬浮状态布局", () => {
     expect(rule).not.toContain("bottom:");
   });
 
-  it("对话详情顶部三个按钮使用紧凑尺寸", () => {
+  it("对话详情顶部按钮使用紧凑尺寸，用量 chip 已移出标题栏", () => {
     const headerRule =
       styles.match(/(?:^|\n)\.conversation-header\s*\{([^}]*)\}/)?.[1] ?? "";
     const buttonRule =
@@ -43,11 +43,14 @@ describe("悬浮状态布局", () => {
     expect(buttonRule).toContain("height: 44px");
     expect(iconRule).toContain("width: 23px");
     expect(iconRule).toContain("height: 23px");
-    expect(chipRule).toContain("height: 44px");
+    // 用量 chip 移到 composer 的 chip 排里了，不再是标题栏那个 44px 高的控件；
+    // 按 codex-host 的口径做成次要元数据（tertiary 文字色、无背景）。
+    expect(chipRule).not.toContain("height: 44px");
+    expect(chipRule).toContain("color: #8f8f8f");
     expect(chipRule).toContain("text-overflow: ellipsis");
   });
 
-  it("对话详情右上角两个按钮共用无分割线胶囊容器", () => {
+  it("对话详情右上角按钮使用无分割线胶囊容器", () => {
     const groupRule =
       styles.match(
         /(?:^|\n)\.conversation-header-actions\s*\{([^}]*)\}/,

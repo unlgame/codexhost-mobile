@@ -159,6 +159,7 @@ const english: Record<string, string> = {
   "查看用量": "View usage",
   "用量": "Usage",
   "上下文 {percent}": "Context {percent}",
+  "最近缓存命中率": "Latest cache hit",
   "缓存读取": "Cache read",
   "缓存写入": "Cache write",
   "Token 总数": "Total tokens",

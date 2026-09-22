@@ -24,14 +24,31 @@ const USAGE = threadUsageFields({
 afterEach(cleanup);
 
 describe("用量 chip 与展开面板", () => {
-  it("chip 只显示上下文占比，并暴露展开状态", () => {
-    const { container } = render(
-      <ThreadUsageChip usage={USAGE} expanded={false} onToggle={() => undefined} />,
+  it("chip 摘要按 codex-host 口径：CH / 费用优先，上下文兜底", () => {
+    // codex-host 的 renderer-usage-control 里
+    //   summary = [credits, "CH x%", "$cost"].join(" · ")
+    // 都没有时才退回上下文占比。原来固定显示上下文占比，口径是对不上的。
+    const withCache = threadUsageFields({
+      cacheHitRatePercent: 99.9,
+      totalCostUsd: 43.402,
+      contextUsagePercent: 59.1,
+    })!;
+    const withCacheView = render(
+      <ThreadUsageChip usage={withCache} expanded={false} onToggle={() => undefined} />,
     );
-    const chip = container.querySelector(".thread-usage-chip");
-    expect(chip?.textContent).toBe("上下文 7.7%");
+    const chip = withCacheView.container.querySelector(".thread-usage-chip");
+    expect(chip?.textContent).toBe("CH 99.9% · $43.402");
     expect(chip?.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByRole("button", { name: "查看用量" })).not.toBeNull();
+
+    // 只有上下文时兜底到上下文占比。
+    const contextOnly = threadUsageFields({ contextUsagePercent: 59.1 })!;
+    const contextView = render(
+      <ThreadUsageChip usage={contextOnly} expanded={false} onToggle={() => undefined} />,
+    );
+    expect(
+      contextView.container.querySelector(".thread-usage-chip")?.textContent,
+    ).toBe("上下文 59.1%");
   });
 
   it("没有用量数据时 chip 退化为「用量」", () => {
@@ -66,6 +83,8 @@ describe("用量 chip 与展开面板", () => {
     ]);
     expect(rows).toEqual([
       ["上下文", "7.7% / 1M"],
+      // 这一行是 codex-host 面板里有的（截图里的 `CH 99.9%`），之前缺了。
+      ["最近缓存命中率", "—"],
       ["缓存读取", "7.6M"],
       ["缓存写入", "0"],
       ["Token 总数", "8.1M"],
@@ -114,7 +133,7 @@ describe("用量 chip 与展开面板", () => {
       />,
     );
     const values = Array.from(container.querySelectorAll("dd")).map((node) => node.textContent);
-    expect(values).toEqual(["—", "—", "—", "—", "5 / —", "—"]);
+    expect(values).toEqual(["—", "—", "—", "—", "—", "5 / —", "—"]);
   });
 
   it("面板提供进入会话状态的入口", () => {
