@@ -10,6 +10,7 @@ import {
   selectThreadPermissionMode,
   selectThreadThinking,
   thinkingOptionsForModel,
+  threadHarnessBinding,
 } from "../../src/app-server/harness-inspect";
 
 const READY_PAYLOAD = {
@@ -123,6 +124,34 @@ describe("外部 harness 探测", () => {
     ).toEqual(["low", "high", "max"]);
     expect(thinkingOptionsForModel(inspection, "missing").map((o) => o.id)).toEqual(
       ["low", "high", "max"],
+    );
+  });
+
+  it("从 thread/inspect 里取出 harness 绑定与生效的模型/思考/权限", () => {
+    // 打开一条已有的 harness 线程时，这三个值就是 picker 该显示的选中态；
+    // 拿不到的话中间那个模型下拉框会是空的。
+    expect(
+      threadHarnessBinding({
+        owner: "external",
+        harnessId: "claude-code",
+        effectiveModel: { id: "claude-opus-4-1" },
+        effectiveThinkingOptionId: "high",
+        effectivePermissionModeId: "plan",
+        locked: true,
+      }),
+    ).toEqual({
+      harnessId: "claude-code",
+      effectiveModelId: "claude-opus-4-1",
+      effectiveThinkingOptionId: "high",
+      effectivePermissionModeId: "plan",
+    });
+
+    // 官方线程不是 harness 线程；字段缺失时只带 harnessId。
+    expect(threadHarnessBinding({ owner: "codex", locked: true })).toBeNull();
+    expect(threadHarnessBinding({ owner: "external" })).toBeNull();
+    expect(threadHarnessBinding(null)).toBeNull();
+    expect(threadHarnessBinding({ owner: "external", harnessId: "pi" })).toEqual(
+      { harnessId: "pi" },
     );
   });
 

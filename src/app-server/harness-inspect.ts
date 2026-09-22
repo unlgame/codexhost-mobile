@@ -222,17 +222,40 @@ export async function selectThreadPermissionMode(
   });
 }
 
+export interface ThreadHarnessBinding {
+  harnessId: string;
+  /** 当前生效的模型 / 思考 / 权限，用来把 picker 的选中态对上。 */
+  effectiveModelId?: string;
+  effectiveThinkingOptionId?: string;
+  effectivePermissionModeId?: string;
+}
+
 /**
  * 从 `codexhost/thread/inspect` 的响应里取出线程绑定的 harness。
  *
  * 官方线程回 `{ owner: "codex", locked: true }`，返回 null。这个值决定
  * `turn/start` 要不要带 `model`：带错会被上游以
  * -32602 "Turn Model carrier does not belong to the Thread Harness" 拒绝。
+ *
+ * 顺带带出生效的模型/思考/权限——打开一条已有的 harness 线程时，这三个值就是
+ * picker 该显示的选中态，否则中间那个下拉框会是空的。
  */
-export function harnessIdFromThreadInspection(payload: unknown): string | null {
+export function threadHarnessBinding(
+  payload: unknown,
+): ThreadHarnessBinding | null {
   const root = record(payload);
   if (text(root.owner) !== "external") return null;
-  return text(root.harnessId) || null;
+  const harnessId = text(root.harnessId);
+  if (!harnessId) return null;
+  const modelId = text(record(root.effectiveModel).id);
+  const thinkingOptionId = text(root.effectiveThinkingOptionId);
+  const permissionModeId = text(root.effectivePermissionModeId);
+  return {
+    harnessId,
+    ...(modelId ? { effectiveModelId: modelId } : {}),
+    ...(thinkingOptionId ? { effectiveThinkingOptionId: thinkingOptionId } : {}),
+    ...(permissionModeId ? { effectivePermissionModeId: permissionModeId } : {}),
+  };
 }
 
 /** 某个模型下可选的思考档位；模型没声明就是全量。 */

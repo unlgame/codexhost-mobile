@@ -136,8 +136,11 @@ import {
 import { tryEncodeHarnessRoute } from "./app-server/harness-route";
 import {
   THREAD_INSPECT_METHOD,
-  harnessIdFromThreadInspection,
   inspectHarness,
+  selectThreadModel,
+  selectThreadPermissionMode,
+  selectThreadThinking,
+  threadHarnessBinding,
   type HarnessInspection,
 } from "./app-server/harness-inspect";
 import type { HarnessPluginOption } from "./features/settings/HarnessPicker";
@@ -1146,12 +1149,28 @@ function BackendWorkspace({
       setActiveThreadAccessMode(session.accessMode);
       setActiveThreadResumeError(session.resumeError ?? "");
       // 问一次线程的 harness 归属：外部 harness 线程要显示绑定关系，而且
-      // turn/start 不能再带官方 model（会被上游以 -32602 拒绝）。
+      // turn/start 不能再带官方 model（会被上游以 -32602 拒绝）。顺带把生效的
+      // 模型/思考/权限和该 harness 的目录拉回来——否则中间那个下拉框在已有
+      // 线程上是空的。
       void client
         .request(THREAD_INSPECT_METHOD, { threadId })
         .then((payload) => {
           if (sequence !== openSequenceRef.current) return;
-          setActiveHarnessId(harnessIdFromThreadInspection(payload));
+          const binding = threadHarnessBinding(payload);
+          setActiveHarnessId(binding?.harnessId ?? null);
+          if (!binding) return;
+          setSelectedHarnessModelId(binding.effectiveModelId ?? null);
+          setSelectedHarnessThinkingId(binding.effectiveThinkingOptionId ?? null);
+          setSelectedHarnessPermissionModeId(
+            binding.effectivePermissionModeId ?? null,
+          );
+          void inspectHarness(client, binding.harnessId, session.thread.cwd ?? null)
+            .then((inspection) => {
+              if (sequence === openSequenceRef.current) {
+                setHarnessInspection(inspection);
+              }
+            })
+            .catch(() => undefined);
         })
         .catch(() => {
           // 非 codexhost 后端不认这个方法：当官方线程处理即可。
@@ -1863,6 +1882,47 @@ function BackendWorkspace({
         );
       });
   };
+  /**
+   * 会话中改 harness 的模型/思考/权限，走 codexhost/thread 下的三个 select RPC。
+   *
+   * 新会话里这三个值只记在本地，最后随路由进 thread/start；已经有线程时必须
+   * 显式调 select，否则选了等于没选。权限模式还要看 permissionModeScope：
+   * atCreate 的 harness 创建后不可改，上游会拒。
+   */
+  const chooseHarnessModel = (modelId: string) => {
+    setSelectedHarnessModelId(modelId);
+    setPicker(null);
+    const client = clientRef.current;
+    if (!client || !active?.id || !activeHarnessId) return;
+    void selectThreadModel(client, active.id, modelId).catch((reason) => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
+  };
+  const chooseHarnessThinking = (thinkingOptionId: string) => {
+    setSelectedHarnessThinkingId(thinkingOptionId);
+    setPicker(null);
+    const client = clientRef.current;
+    if (!client || !active?.id || !activeHarnessId) return;
+    void selectThreadThinking(client, active.id, thinkingOptionId).catch(
+      (reason) => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      },
+    );
+  };
+  const chooseHarnessPermissionMode = (permissionModeId: string) => {
+    setSelectedHarnessPermissionModeId(permissionModeId);
+    setPicker(null);
+    const client = clientRef.current;
+    if (!client || !active?.id || !activeHarnessId) return;
+    if (harnessInspection?.capabilities.permissionModeScope === "atCreate") {
+      return;
+    }
+    void selectThreadPermissionMode(client, active.id, permissionModeId).catch(
+      (reason) => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      },
+    );
+  };
   // harness 只在 thread/start 时绑定：这个路由字符串就是 thread/start 的 model。
   const harnessRoute = tryEncodeHarnessRoute(
     selectedHarnessId
@@ -2178,9 +2238,9 @@ function BackendWorkspace({
         onChooseSpeed={setSelectedServiceTier}
         onChoosePermissionMode={choosePermissionMode}
         onChooseHarness={chooseHarness}
-        onChooseHarnessModel={setSelectedHarnessModelId}
-        onChooseHarnessThinking={setSelectedHarnessThinkingId}
-        onChooseHarnessPermissionMode={setSelectedHarnessPermissionModeId}
+        onChooseHarnessModel={chooseHarnessModel}
+        onChooseHarnessThinking={chooseHarnessThinking}
+        onChooseHarnessPermissionMode={chooseHarnessPermissionMode}
       />
     </main>
   );
